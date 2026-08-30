@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeChannels, MAX_SECONDS } from '../js/analyze.js';
+import { analyzeChannels, hotZoneThreshold, MAX_SECONDS } from '../js/analyze.js';
 import { reportHtml } from '../js/report.js';
 
 function sine(n: number, freq: number, sr: number, amp = 0.5) {
@@ -58,6 +58,18 @@ describe('analyzeChannels', () => {
     expect(r.phase).toBeLessThan(0);
     expect(r.width).toBeGreaterThan(0.9);
     expect(r.findings.some((f) => /stereo|phase/i.test(f.title))).toBe(true);
+  });
+
+  it('emits hotZones on brickwalled material (threshold capped at 0.99)', () => {
+    const sr = 8000;
+    const clipped = new Float32Array(sr);
+    clipped.fill(1);
+    const r = analyzeChannels([clipped], sr, { format: 'wav' });
+    expect(hotZoneThreshold(r.envelope)).toBeLessThanOrEqual(0.99);
+    expect(r.hotZones.length).toBeGreaterThan(0);
+    expect(r.hotZones.some((z) => z.kind === 'clip')).toBe(true);
+    const span = r.hotZones.reduce((s, z) => s + (z.end - z.start), 0);
+    expect(span).toBeGreaterThan(0.5);
   });
 
   it('rejects duration over 300 seconds', () => {

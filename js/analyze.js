@@ -51,11 +51,16 @@ async function decodeToChannels(buf) {
   }
 }
 
-function hotZonesFromEnvelope(envelope) {
-  if (!envelope.length) return [];
+export function hotZoneThreshold(envelope) {
+  if (!envelope.length) return CLIP_THRESH;
   const sorted = envelope.slice().sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)] || 0;
-  const thresh = Math.max(0.95, median * 1.6);
+  return Math.min(CLIP_THRESH, Math.max(0.95, median * 1.6));
+}
+
+function hotZonesFromEnvelope(envelope) {
+  if (!envelope.length) return [];
+  const thresh = hotZoneThreshold(envelope);
   const zones = [];
   let start = -1;
   let kind = 'hot';
