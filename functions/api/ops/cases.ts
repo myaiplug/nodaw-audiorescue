@@ -3,7 +3,7 @@ import { validateAudioHeaders } from '../../lib/audioValidate';
 import { getCase, listCases, putCase, type CaseRecord } from '../../lib/cases';
 import { notifyDiscord } from '../../lib/discord';
 import { opsAuthorized, opsClearCookieHeader, opsCookieHeader } from '../../lib/opsAuth';
-import { createBalanceCheckout, declineRefundFields, stripeForm } from '../../lib/stripe';
+import { commitIssuedBalanceCheckout, createBalanceCheckout, declineRefundFields, stripeForm } from '../../lib/stripe';
 import { DOWNLOAD_TOKEN_TTL_SEC, mintDownloadLinks } from '../../lib/tokens';
 
 const NOTES_MAX = 4000;
@@ -265,6 +265,7 @@ export async function processOpsCases(
       }
     }
 
+    let committed: CaseRecord = record;
     try {
       const session = await createBalanceCheckout(
         env.STRIPE_SECRET_KEY,
@@ -275,22 +276,23 @@ export async function processOpsCases(
         },
         record.stripeBalanceSessionId,
       );
-      record.balanceCheckoutUrl = session.url;
-      record.stripeBalanceSessionId = session.id;
-      record.status = 'balance_due';
-      await putCase(env.CASES, record);
+      const result = await commitIssuedBalanceCheckout(env.CASES, env.STRIPE_SECRET_KEY, record, session);
+      committed = result.record;
+      if (!result.ok) {
+        return json({ ok: true, case: publicize(committed), refused: true, reason: 'already_paid' }, 409);
+      }
     } catch (err) {
       console.error('Stripe balance checkout failed', err);
       return json({ error: 'Checkout failed' }, 502);
     }
 
-    const discordContent = `Rescued ${record.id} ${record.email} — balance due $19.50\n${record.balanceCheckoutUrl}`;
+    const discordContent = `Rescued ${committed.id} ${committed.email} — balance due $19.50\n${committed.balanceCheckoutUrl}`;
     const notify = notifyDiscord(env.DISCORD_WEBHOOK_URL, discordContent).catch((err) => {
       console.error('Discord notify failed', err);
     });
     if (waitUntil) waitUntil(notify);
 
-    return json({ ok: true, case: publicize(record), url: record.balanceCheckoutUrl });
+    return json({ ok: true, case: publicize(committed), url: committed.balanceCheckoutUrl });
   }
 
   if (action === 'source_url') {

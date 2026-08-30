@@ -6,8 +6,10 @@ import {
   DECLINE_KEEP_CENTS,
   DECLINE_REFUND_CENTS,
   balanceCheckoutFields,
+  commitIssuedBalanceCheckout,
   declineRefundFields,
   depositCheckoutFields,
+  expirePreviousBalanceSession,
   stripeForm,
   stripeEventKey,
   verifyStripeSignature,
@@ -90,6 +92,115 @@ describe('balanceCheckoutFields + decline refund', () => {
     expect(fields.payment_intent).toBe('pi_deposit_1');
     expect(fields.reason).toBe('requested_by_customer');
     expect(fields['metadata[reason]']).toBe('not_a_fit_review_fee_kept');
+  });
+});
+
+describe('expirePreviousBalanceSession', () => {
+  it('throws when expire fails because the session completed, and does not treat it as expired', async () => {
+    const calls: string[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      calls.push(`${init?.method ?? 'GET'} ${u}`);
+      if (u.endsWith('/expire')) {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'A Checkout Session can only be expired if it is in the open state.' },
+          }),
+          { status: 400 },
+        );
+      }
+      const gets = calls.filter((c) => c.includes('/checkout/sessions/cs_old') && !c.includes('/expire')).length;
+      if (gets <= 1) {
+        return new Response(JSON.stringify({ id: 'cs_old', status: 'open', payment_status: 'unpaid' }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ id: 'cs_old', status: 'complete', payment_status: 'paid' }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    try {
+      await expect(expirePreviousBalanceSession('sk_test_x', 'cs_old')).rejects.toThrow(
+        'Previous balance session already paid',
+      );
+      expect(calls.some((c) => c.includes('/expire'))).toBe(true);
+      expect(calls.filter((c) => c.startsWith('GET ')).length).toBeGreaterThanOrEqual(2);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it('continues when expire fails because the session is already expired', async () => {
+    const orig = globalThis.fetch;
+    let gets = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.endsWith('/expire')) {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'A Checkout Session can only be expired if it is in the open state.' },
+          }),
+          { status: 400 },
+        );
+      }
+      gets += 1;
+      if (gets === 1) {
+        return new Response(JSON.stringify({ id: 'cs_old', status: 'open', payment_status: 'unpaid' }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ id: 'cs_old', status: 'expired', payment_status: 'unpaid' }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    try {
+      await expect(expirePreviousBalanceSession('sk_test_x', 'cs_old')).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});
+
+describe('commitIssuedBalanceCheckout', () => {
+  it('refuses to overwrite paid_in_full and expires the newly created session', async () => {
+    const kv = memoryKv();
+    const paid: CaseRecord = {
+      id: 'case-paid',
+      email: 'a@b.co',
+      name: 'Ada',
+      notes: '',
+      service: 'Rush vocal cleanup',
+      status: 'paid_in_full',
+      stripeDepositPi: 'pi_d',
+      stripeBalancePi: 'pi_b',
+      stripeBalanceSessionId: 'cs_paid',
+      createdAt: '2026-08-29T00:00:00.000Z',
+    };
+    await putCase(kv as unknown as KVNamespace, paid);
+    const stale: CaseRecord = { ...paid, status: 'balance_due', stripeBalancePi: null };
+    const calls: string[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ id: 'cs_new', status: 'expired' }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const result = await commitIssuedBalanceCheckout(
+        kv as unknown as KVNamespace,
+        'sk_test_x',
+        stale,
+        { url: 'https://checkout.stripe.com/c/pay/cs_new', id: 'cs_new' },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.record.status).toBe('paid_in_full');
+      expect(result.record.stripeBalanceSessionId).toBe('cs_paid');
+      expect(calls.some((c) => c.includes('/checkout/sessions/cs_new/expire'))).toBe(true);
+      expect((await getCase(kv as unknown as KVNamespace, 'case-paid'))?.status).toBe('paid_in_full');
+      expect((await getCase(kv as unknown as KVNamespace, 'case-paid'))?.stripeBalanceSessionId).toBe('cs_paid');
+    } finally {
+      globalThis.fetch = orig;
+    }
   });
 });
 

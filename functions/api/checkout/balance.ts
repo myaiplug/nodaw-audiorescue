@@ -1,7 +1,7 @@
 import type { Env } from '../../lib/env';
-import { getCase, putCase, type CaseRecord } from '../../lib/cases';
+import { getCase, type CaseRecord } from '../../lib/cases';
 import { opsAuthorized } from '../../lib/opsAuth';
-import { createBalanceCheckout } from '../../lib/stripe';
+import { commitIssuedBalanceCheckout, createBalanceCheckout } from '../../lib/stripe';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -49,11 +49,11 @@ export async function processBalanceCheckout(
       },
       record.stripeBalanceSessionId,
     );
-    record.balanceCheckoutUrl = session.url;
-    record.stripeBalanceSessionId = session.id;
-    if (record.status === 'rescued') record.status = 'balance_due';
-    await putCase(env.CASES, record);
-    return json({ url: session.url, caseId: record.id, status: record.status });
+    const result = await commitIssuedBalanceCheckout(env.CASES, env.STRIPE_SECRET_KEY, record, session);
+    if (!result.ok) {
+      return json({ error: 'Case already paid in full', case: { id: result.record.id, status: result.record.status } }, 409);
+    }
+    return json({ url: session.url, caseId: result.record.id, status: result.record.status });
   } catch (err) {
     console.error('Stripe balance checkout failed', err);
     return json({ error: 'Checkout failed' }, 502);

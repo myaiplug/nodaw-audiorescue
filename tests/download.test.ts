@@ -129,7 +129,33 @@ describe('GET /api/download', () => {
     );
     expect(res.status).toBe(402);
     expect(await res.json()).toMatchObject({ error: 'Balance required to download', status: 'balance_due' });
-    expect(await kv.get(tokenKey('download', token))).toBeNull();
+    expect(await kv.get(tokenKey('download', token))).toBe(JSON.stringify({
+      caseId,
+      r2Key: rec.r2RescueWav,
+      filename: 'rescue.wav',
+    }));
+  });
+
+  it('returns 404 without burning the token when the R2 object is missing', async () => {
+    const kv = memoryKv();
+    const rec = paidCase();
+    const token = await mintToken(
+      kv as unknown as KVNamespace,
+      'download',
+      JSON.stringify({
+        caseId,
+        r2Key: rec.r2RescueWav,
+        filename: 'rescue.wav',
+      }),
+      3600,
+    );
+    await putCase(kv as unknown as KVNamespace, rec);
+    const res = await processDownload(
+      new Request(`http://localhost/api/download?token=${token}`),
+      { CASES: kv as unknown as KVNamespace, AUDIO: memoryR2() as unknown as R2Bucket },
+    );
+    expect(res.status).toBe(404);
+    expect(await kv.get(tokenKey('download', token))).toBeTruthy();
   });
 
   it('returns 500 and does not stream if consume fails', async () => {

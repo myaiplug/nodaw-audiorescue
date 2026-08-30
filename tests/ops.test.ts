@@ -367,6 +367,57 @@ describe('POST /api/ops/cases', () => {
     }
   });
 
+  it('does not create a new session if expire fails because the previous session completed', async () => {
+    const kv = memoryKv();
+    const rec = uploadedCase();
+    rec.status = 'balance_due';
+    rec.stripeBalanceSessionId = 'cs_old';
+    await putCase(kv as unknown as KVNamespace, rec);
+    let created = 0;
+    let gets = 0;
+    const origErr = console.error;
+    console.error = () => {};
+    try {
+      const res = await postOps({
+        kv,
+        body: { action: 'mark_rescued', caseId },
+        stripe: async (url) => {
+          const u = String(url);
+          if (u.endsWith('/expire')) {
+            return new Response(
+              JSON.stringify({
+                error: { message: 'A Checkout Session can only be expired if it is in the open state.' },
+              }),
+              { status: 400 },
+            );
+          }
+          if (u.includes('/checkout/sessions/cs_old')) {
+            gets += 1;
+            if (gets === 1) {
+              return new Response(
+                JSON.stringify({ id: 'cs_old', status: 'open', payment_status: 'unpaid' }),
+                { status: 200 },
+              );
+            }
+            return new Response(
+              JSON.stringify({ id: 'cs_old', status: 'complete', payment_status: 'paid' }),
+              { status: 200 },
+            );
+          }
+          if (u.endsWith('/checkout/sessions')) created += 1;
+          return new Response(JSON.stringify({ id: 'cs_new', url: 'https://checkout.stripe.com/x' }), {
+            status: 200,
+          });
+        },
+      });
+      expect(res.status).toBe(502);
+      expect(created).toBe(0);
+      expect((await getCase(kv as unknown as KVNamespace, caseId))?.status).toBe('balance_due');
+    } finally {
+      console.error = origErr;
+    }
+  });
+
   it('source_url mints an ops download token', async () => {
     const kv = memoryKv();
     await putCase(kv as unknown as KVNamespace, uploadedCase());

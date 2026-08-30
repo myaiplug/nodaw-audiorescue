@@ -1,6 +1,6 @@
 import type { Env } from '../../lib/env';
 import { getCase } from '../../lib/cases';
-import { consumeToken, parseDownloadTokenPayload } from '../../lib/tokens';
+import { consumeToken, parseDownloadTokenPayload, peekToken } from '../../lib/tokens';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -34,14 +34,8 @@ export async function processDownload(
   const token = (url.searchParams.get('token') || '').trim();
   if (!token) return json({ error: 'Missing download token' }, 401);
 
-  let raw: string | null;
-  try {
-    raw = await consumeToken(env.CASES, 'download', token);
-  } catch (err) {
-    console.error('Download token consume failed', err);
-    return json({ error: 'Download failed' }, 500);
-  }
-  const payload = parseDownloadTokenPayload(raw);
+  const peeked = await peekToken(env.CASES, 'download', token);
+  const payload = parseDownloadTokenPayload(peeked);
   if (!payload) return json({ error: 'Invalid or expired download token' }, 401);
 
   const record = await getCase(env.CASES, payload.caseId);
@@ -52,6 +46,15 @@ export async function processDownload(
 
   const obj = await env.AUDIO.get(payload.r2Key);
   if (!obj) return json({ error: 'File not found' }, 404);
+
+  let consumed: string | null;
+  try {
+    consumed = await consumeToken(env.CASES, 'download', token);
+  } catch (err) {
+    console.error('Download token consume failed', err);
+    return json({ error: 'Download failed' }, 500);
+  }
+  if (!consumed) return json({ error: 'Invalid or expired download token' }, 401);
 
   const filename = safeFilename(payload.filename);
   const body =

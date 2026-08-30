@@ -1,3 +1,5 @@
+import { getCase, putCase, type CaseRecord } from './cases';
+
 export const DEPOSIT_AMOUNT_CENTS = 1950;
 export const BALANCE_AMOUNT_CENTS = 1950;
 export const DECLINE_REFUND_CENTS = 1450;
@@ -106,17 +108,57 @@ export async function expirePreviousBalanceSession(
     if (/resource_missing|No such checkout/i.test(msg)) return;
     throw err;
   }
-  if (session.payment_status === 'paid' || session.status === 'complete') {
+  if (isBalanceSessionPaid(session)) {
     throw new Error('Previous balance session already paid');
   }
   if (session.status !== 'open') return;
   try {
     await stripeForm(secret, `checkout/sessions/${encoded}/expire`, {});
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/expired|complete|open state/i.test(msg)) return;
+    let again: { status?: string; payment_status?: string };
+    try {
+      again = (await stripeGet(secret, `checkout/sessions/${encoded}`)) as typeof again;
+    } catch {
+      throw err;
+    }
+    if (isBalanceSessionPaid(again)) {
+      throw new Error('Previous balance session already paid');
+    }
+    if (again.status === 'expired' || again.status !== 'open') return;
     throw err;
   }
+}
+
+function isBalanceSessionPaid(session: { status?: string; payment_status?: string }): boolean {
+  return session.payment_status === 'paid' || session.status === 'complete';
+}
+
+export async function commitIssuedBalanceCheckout(
+  kv: KVNamespace,
+  secret: string,
+  record: CaseRecord,
+  session: { url: string; id: string },
+): Promise<{ ok: true; record: CaseRecord } | { ok: false; record: CaseRecord }> {
+  const latest = await getCase(kv, record.id);
+  if (latest && (latest.status === 'paid_in_full' || latest.status === 'delivered')) {
+    try {
+      await stripeForm(secret, `checkout/sessions/${encodeURIComponent(session.id)}/expire`, {});
+    } catch (err) {
+      console.error('Expire raced leftover balance session failed', err);
+    }
+    return { ok: false, record: latest };
+  }
+  const next: CaseRecord = latest ? { ...latest } : record;
+  if (record.r2RescueWav) next.r2RescueWav = record.r2RescueWav;
+  if (record.r2RescueMp3) next.r2RescueMp3 = record.r2RescueMp3;
+  if (record.r2Notes) next.r2Notes = record.r2Notes;
+  next.balanceCheckoutUrl = session.url;
+  next.stripeBalanceSessionId = session.id;
+  if (next.status !== 'paid_in_full' && next.status !== 'delivered') {
+    next.status = 'balance_due';
+  }
+  await putCase(kv, next);
+  return { ok: true, record: next };
 }
 
 export async function createBalanceCheckout(
