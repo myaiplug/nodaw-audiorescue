@@ -8,7 +8,7 @@ import {
 const $ = (id) => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
-const token = (params.get('token') || '').trim();
+let token = (params.get('token') || '').trim();
 const caseId = (params.get('case') || '').trim();
 const sessionId = (params.get('session_id') || '').trim();
 
@@ -61,15 +61,55 @@ if (caseId) {
   metaEl.hidden = false;
 }
 
-if (!token) {
-  picker.hidden = true;
-  if (sessionId) {
-    showError('Payment landed. This page still needs the one-time upload token from your confirmation link (upload.html?token=…).');
-  } else {
-    showError('Missing upload token. Use the one-time link from your deposit confirmation.');
-  }
-} else {
+function enablePicker() {
+  picker.hidden = false;
   fileInput.disabled = false;
+}
+
+async function claimFromSession() {
+  statusEl.textContent = 'Confirming deposit…';
+  picker.hidden = true;
+  const q = new URLSearchParams({ session_id: sessionId });
+  if (caseId) q.set('case', caseId);
+  try {
+    const res = await fetch('/api/upload/claim?' + q.toString(), { credentials: 'omit' });
+    let body = {};
+    try { body = await res.json(); } catch (_) { /* ignore */ }
+    if (!res.ok) {
+      const msg = body && body.error ? body.error : 'Could not confirm deposit (' + res.status + ').';
+      showError(msg);
+      statusEl.textContent = '';
+      return;
+    }
+    if (!body.token) {
+      showError('Deposit confirmed, but no upload token was issued. Request a new upload link.');
+      statusEl.textContent = '';
+      return;
+    }
+    token = body.token;
+    if (body.caseId) {
+      $('case-id').textContent = body.caseId;
+      metaEl.hidden = false;
+    }
+    clearError();
+    statusEl.textContent = '';
+    enablePicker();
+  } catch (err) {
+    showError(err && err.message ? err.message : 'Could not confirm deposit.');
+    statusEl.textContent = '';
+  }
+}
+
+if (token) {
+  enablePicker();
+} else if (sessionId) {
+  picker.hidden = true;
+  fileInput.disabled = true;
+  void claimFromSession();
+} else {
+  picker.hidden = true;
+  fileInput.disabled = true;
+  showError('Missing upload token. Use the one-time link from your deposit confirmation.');
 }
 
 function setBusy(busy) {

@@ -83,7 +83,7 @@
     const login = $('login');
     const desk = $('desk');
     const casesEl = $('cases');
-    let password = sessionStorage.getItem('ops') || '';
+    let authed = false;
 
     function esc(s) {
       return String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -97,9 +97,7 @@
     }
 
     function headers(extra) {
-      const h = extra ? Object.assign({}, extra) : {};
-      if (password) h.Authorization = 'Bearer ' + password;
-      return h;
+      return extra ? Object.assign({}, extra) : {};
     }
 
     async function api(body, isForm) {
@@ -120,13 +118,15 @@
       if (res.status === 401) {
         desk.hidden = true;
         login.hidden = false;
-        showError('Password required.');
+        if (authed) showError('Session expired. Sign in again.');
+        authed = false;
         return;
       }
       if (!res.ok) {
         showError(data.error || 'List failed.');
         return;
       }
+      authed = true;
       login.hidden = true;
       desk.hidden = false;
       const list = data.cases || [];
@@ -169,21 +169,20 @@
 
     login.addEventListener('submit', async (e) => {
       e.preventDefault();
-      password = $('password').value;
+      const password = $('password').value;
       const { res, data } = await api({ action: 'login', password });
+      $('password').value = '';
       if (!res.ok) {
         showError(data.error || 'Login failed.');
         return;
       }
-      sessionStorage.setItem('ops', password);
       await loadCases();
     });
 
     $('refresh').addEventListener('click', () => loadCases());
     $('logout').addEventListener('click', async () => {
       await api({ action: 'logout' });
-      sessionStorage.removeItem('ops');
-      password = '';
+      authed = false;
       desk.hidden = true;
       login.hidden = false;
     });
@@ -217,7 +216,7 @@
       await loadCases();
     });
 
-    if (password) loadCases();
+    loadCases();
   </script>
 </body>
 </html>

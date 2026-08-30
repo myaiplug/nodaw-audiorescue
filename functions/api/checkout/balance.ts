@@ -17,7 +17,7 @@ export async function processBalanceCheckout(
   env: Pick<Env, 'CASES' | 'STRIPE_SECRET_KEY' | 'PUBLIC_BASE_URL' | 'OPS_PASSWORD'>,
 ): Promise<Response> {
   if (!env.OPS_PASSWORD) return json({ error: 'OPS_PASSWORD is not configured' }, 500);
-  if (!opsAuthorized(request, env.OPS_PASSWORD)) return json({ error: 'Unauthorized' }, 401);
+  if (!(await opsAuthorized(request, env))) return json({ error: 'Unauthorized' }, 401);
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'Stripe is not configured' }, 500);
   if (!env.PUBLIC_BASE_URL) return json({ error: 'PUBLIC_BASE_URL is not configured' }, 500);
 

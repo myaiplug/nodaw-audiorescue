@@ -2,7 +2,15 @@ import type { Env } from '../../lib/env';
 import { validateAudioHeaders } from '../../lib/audioValidate';
 import { getCase, listCases, putCase, type CaseRecord } from '../../lib/cases';
 import { notifyDiscord } from '../../lib/discord';
-import { opsAuthorized, opsClearCookieHeader, opsCookieHeader } from '../../lib/opsAuth';
+import {
+  issueOpsSession,
+  opsAuthorized,
+  opsClearCookieHeader,
+  opsCookieHeader,
+  opsPasswordMatches,
+  opsSessionToken,
+  revokeOpsSession,
+} from '../../lib/opsAuth';
 import { commitIssuedBalanceCheckout, createBalanceCheckout, declineRefundFields, stripeForm } from '../../lib/stripe';
 import { DOWNLOAD_TOKEN_TTL_SEC, mintDownloadLinks } from '../../lib/tokens';
 
@@ -153,16 +161,19 @@ export async function processOpsCases(
 
   if (action === 'login') {
     const password = fields.password || '';
-    if (!opsAuthorized(new Request(request.url, { headers: { Authorization: `Bearer ${password}` } }), env.OPS_PASSWORD)) {
+    if (!opsPasswordMatches(password, env.OPS_PASSWORD)) {
       return json({ error: 'Unauthorized' }, 401);
     }
-    return json({ ok: true }, 200, { 'Set-Cookie': opsCookieHeader(env.OPS_PASSWORD) });
+    const token = await issueOpsSession(env.CASES);
+    return json({ ok: true }, 200, { 'Set-Cookie': opsCookieHeader(token) });
   }
   if (action === 'logout') {
+    const existing = opsSessionToken(request);
+    if (existing) await revokeOpsSession(env.CASES, existing);
     return json({ ok: true }, 200, { 'Set-Cookie': opsClearCookieHeader() });
   }
 
-  if (!opsAuthorized(request, env.OPS_PASSWORD)) return json({ error: 'Unauthorized' }, 401);
+  if (!(await opsAuthorized(request, env))) return json({ error: 'Unauthorized' }, 401);
 
   if (action === 'list') {
     const cases = await listCases(env.CASES);

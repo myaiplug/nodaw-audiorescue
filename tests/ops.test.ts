@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { processOpsCases } from '../functions/api/ops/cases';
 import { getCase, putCase, type CaseRecord } from '../functions/lib/cases';
+import { issueOpsSession } from '../functions/lib/opsAuth';
 import { DECLINE_REFUND_CENTS } from '../functions/lib/stripe';
 import { parseDownloadTokenPayload, tokenKey } from '../functions/lib/tokens';
 
@@ -123,8 +124,14 @@ async function postOps(opts: {
 }): Promise<Response> {
   const r2 = opts.r2 ?? memoryR2();
   const headers: Record<string, string> = {};
-  if (opts.auth !== null) headers.Authorization = `Bearer ${opts.auth ?? OPS}`;
-  if (opts.cookie) headers.Cookie = opts.cookie;
+  if (opts.cookie) {
+    headers.Cookie = opts.cookie;
+  } else if (opts.auth === undefined) {
+    const token = await issueOpsSession(opts.kv as unknown as KVNamespace);
+    headers.Cookie = `ops_session=${token}`;
+  } else if (opts.auth !== null) {
+    headers.Authorization = `Bearer ${opts.auth}`;
+  }
   if (!opts.form) headers['content-type'] = 'application/json';
 
   const orig = globalThis.fetch;
@@ -162,14 +169,17 @@ describe('POST /api/ops/cases', () => {
     expect(res.status).toBe(401);
   });
 
-  it('login sets ops cookie and cookie auth lists cases', async () => {
+  it('login sets ops_session cookie (not the password) and cookie auth lists cases', async () => {
     const kv = memoryKv();
     await putCase(kv as unknown as KVNamespace, uploadedCase());
     const login = await postOps({ kv, auth: null, body: { action: 'login', password: OPS } });
     expect(login.status).toBe(200);
     const setCookie = login.headers.get('Set-Cookie') || '';
-    expect(setCookie).toContain('ops=');
+    expect(setCookie).toContain('ops_session=');
+    expect(setCookie).not.toContain(OPS);
     expect(setCookie.toLowerCase()).toContain('httponly');
+    expect(setCookie.toLowerCase()).toContain('secure');
+    expect(setCookie.toLowerCase()).toContain('samesite=strict');
 
     const listed = await postOps({
       kv,
@@ -182,6 +192,17 @@ describe('POST /api/ops/cases', () => {
     expect(body.cases).toHaveLength(1);
     expect(body.cases[0].id).toBe(caseId);
     expect(body.cases[0].status).toBe('uploaded');
+  });
+
+  it('rejects Bearer OPS_PASSWORD and accepts a Bearer session token', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, uploadedCase());
+    const withPassword = await postOps({ kv, auth: OPS, body: { action: 'list' } });
+    expect(withPassword.status).toBe(401);
+
+    const token = await issueOpsSession(kv as unknown as KVNamespace);
+    const withSession = await postOps({ kv, auth: token, body: { action: 'list' } });
+    expect(withSession.status).toBe(200);
   });
 
   it('declines with a 1450 refund, marks declined, notifies Discord', async () => {
@@ -436,5 +457,12 @@ describe('POST /api/ops/cases', () => {
     const kv = memoryKv();
     const res = await postOps({ kv, auth: 'nope', body: { action: 'list' } });
     expect(res.status).toBe(401);
+  });
+
+  it('rejects login with a wrong password', async () => {
+    const kv = memoryKv();
+    const res = await postOps({ kv, auth: null, body: { action: 'login', password: 'nope' } });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('Set-Cookie')).toBeNull();
   });
 });

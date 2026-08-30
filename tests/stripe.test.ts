@@ -397,6 +397,7 @@ describe('processStripeWebhook deposit', () => {
       );
       expect(tokEntries).toHaveLength(1);
       expect(tokEntries[0][1]).toBe(caseId);
+      expect(rec?.uploadToken).toBe(tokEntries[0][0].slice('tok:upload:'.length));
       expect(discord.join('')).toContain(`New deposit ${caseId} artist@example.com`);
       expect(discord.join('')).toContain('upload.html?');
 
@@ -422,6 +423,51 @@ describe('processStripeWebhook deposit', () => {
     expect(res.status).toBe(200);
     expect((await getCase(env.CASES, caseId))?.status).toBe('draft');
     expect(await kv.get(caseKey(caseId))).toBeTruthy();
+  });
+
+  it('returns 200 for an unknown caseId so Stripe will not retry', async () => {
+    const kv = memoryKv();
+    const payload = depositEvent();
+    const env = {
+      CASES: kv as unknown as KVNamespace,
+      STRIPE_WEBHOOK_SECRET: secret,
+      PUBLIC_BASE_URL: 'http://localhost:8788',
+    };
+    const res = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true });
+    expect(await kv.get(stripeEventKey(eventId))).toBeNull();
+    expect([...kv.data.keys()].filter((k) => k.startsWith('tok:upload:'))).toHaveLength(0);
+  });
+
+  it('returns 200 when deposit metadata is missing caseId', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, draftCase());
+    const payload = depositEvent({ metadata: { type: 'deposit' } });
+    const env = {
+      CASES: kv as unknown as KVNamespace,
+      STRIPE_WEBHOOK_SECRET: secret,
+      PUBLIC_BASE_URL: 'http://localhost:8788',
+    };
+    const res = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+    expect(res.status).toBe(200);
+    expect((await getCase(env.CASES, caseId))?.status).toBe('draft');
+  });
+
+  it('keeps 400 for a bad Stripe signature', async () => {
+    const kv = memoryKv();
+    const payload = depositEvent();
+    const res = await processStripeWebhook(
+      payload,
+      `t=${now},v1=${'ab'.repeat(32)}`,
+      {
+        CASES: kv as unknown as KVNamespace,
+        STRIPE_WEBHOOK_SECRET: secret,
+        PUBLIC_BASE_URL: 'http://localhost:8788',
+      },
+      now,
+    );
+    expect(res.status).toBe(400);
   });
 
   it('writes event:{id} before Discord so a hung notify cannot remint', async () => {

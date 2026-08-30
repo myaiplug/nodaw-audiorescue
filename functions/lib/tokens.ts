@@ -3,6 +3,7 @@ import { downloadAssetsFor, type CaseRecord, type DownloadLink } from './cases';
 export type TokenKind = 'upload' | 'download';
 
 export const DOWNLOAD_TOKEN_TTL_SEC = 60 * 60 * 72; // 72h
+export const UPLOAD_TOKEN_TTL_SEC = 60 * 60;
 
 export type DownloadTokenPayload = {
   caseId: string;
@@ -124,4 +125,19 @@ export async function consumeToken(
   if (!caseId) return null;
   await kv.delete(key);
   return caseId;
+}
+
+/** Return the live upload token, or mint a new one. Caller must persist `record`. */
+export async function liveOrMintUploadToken(
+  kv: KVNamespace,
+  record: CaseRecord,
+  ttlSec = UPLOAD_TOKEN_TTL_SEC,
+): Promise<{ token: string; minted: boolean }> {
+  if (record.uploadToken) {
+    const live = await peekToken(kv, 'upload', record.uploadToken);
+    if (live === record.id) return { token: record.uploadToken, minted: false };
+  }
+  const token = await mintToken(kv, 'upload', record.id, ttlSec);
+  record.uploadToken = token;
+  return { token, minted: true };
 }

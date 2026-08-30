@@ -8,9 +8,12 @@ import {
   stripeForm,
   verifyStripeSignature,
 } from '../../lib/stripe';
-import { DOWNLOAD_TOKEN_TTL_SEC, mintDownloadLinks, mintToken } from '../../lib/tokens';
-
-const UPLOAD_TOKEN_TTL_SEC = 60 * 60;
+import {
+  DOWNLOAD_TOKEN_TTL_SEC,
+  UPLOAD_TOKEN_TTL_SEC,
+  liveOrMintUploadToken,
+  mintDownloadLinks,
+} from '../../lib/tokens';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -76,17 +79,17 @@ export async function processStripeWebhook(
   }
 
   const caseId = typeof metadata.caseId === 'string' ? metadata.caseId : '';
-  if (!caseId) return json({ error: 'Missing caseId metadata' }, 400);
+  if (!caseId) return json({ received: true });
 
   const record = await getCase(env.CASES, caseId);
-  if (!record) return json({ error: 'Unknown case' }, 400);
+  if (!record) return json({ received: true });
 
   let discordContent: string | null = null;
   const sessionId = typeof session.id === 'string' ? session.id : '';
   if (metaType === 'deposit' && record.status === 'draft') {
     record.status = 'deposited';
     record.stripeDepositPi = paymentIntentId(session.payment_intent);
-    const token = await mintToken(env.CASES, 'upload', record.id, UPLOAD_TOKEN_TTL_SEC);
+    const { token } = await liveOrMintUploadToken(env.CASES, record, UPLOAD_TOKEN_TTL_SEC);
     await putCase(env.CASES, record);
     const base = (env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     const uploadUrl = `${base}/upload.html?case=${encodeURIComponent(record.id)}&token=${encodeURIComponent(token)}`;

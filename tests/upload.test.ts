@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { processUpload } from '../functions/api/upload';
+import { processUploadClaim } from '../functions/api/upload/claim';
 import { getCase, putCase, type CaseRecord } from '../functions/lib/cases';
 import { mintToken, tokenKey } from '../functions/lib/tokens';
 
@@ -369,5 +370,96 @@ describe('POST /api/upload', () => {
     } finally {
       console.error = origErr;
     }
+  });
+
+  it('rate-limits an IP after 10 upload POSTs in the window', async () => {
+    const { kv, r2 } = await setup();
+    let last: Response | undefined;
+    for (let i = 0; i < 11; i++) {
+      last = await postUpload({
+        kv,
+        r2,
+        bearer: false,
+        formToken: false,
+        file: fileFrom(wavHeader(), 'mix.wav', 'audio/wav'),
+      });
+    }
+    expect(last?.status).toBe(429);
+    expect(await last!.json()).toEqual({ error: 'Too many requests' });
+  });
+});
+
+describe('GET /api/upload/claim', () => {
+  const sessionId = 'cs_dep_1';
+
+  async function claimWithSession(
+    kv: ReturnType<typeof memoryKv>,
+    session: Record<string, unknown>,
+    extraQuery = '',
+  ): Promise<Response> {
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      expect(String(url)).toContain(`/checkout/sessions/${sessionId}`);
+      return new Response(JSON.stringify(session), { status: 200 });
+    }) as typeof fetch;
+    try {
+      return await processUploadClaim(
+        new Request(`http://localhost/api/upload/claim?session_id=${sessionId}${extraQuery}`),
+        { CASES: kv as unknown as KVNamespace, STRIPE_SECRET_KEY: 'sk_test_x' },
+      );
+    } finally {
+      globalThis.fetch = orig;
+    }
+  }
+
+  it('returns a live upload token for a paid deposit session', async () => {
+    const { kv, token } = await setup();
+    const rec = await getCase(kv as unknown as KVNamespace, caseId);
+    rec!.uploadToken = token;
+    await putCase(kv as unknown as KVNamespace, rec!);
+
+    const res = await claimWithSession(kv, {
+      id: sessionId,
+      status: 'complete',
+      payment_status: 'paid',
+      metadata: { type: 'deposit', caseId },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ caseId, status: 'deposited', token });
+    expect(await kv.get(tokenKey('upload', token))).toBe(caseId);
+  });
+
+  it('mints a new token when the previous upload token is missing', async () => {
+    const { kv, token } = await setup();
+    const rec = await getCase(kv as unknown as KVNamespace, caseId);
+    rec!.uploadToken = token;
+    await putCase(kv as unknown as KVNamespace, rec!);
+    await kv.delete(tokenKey('upload', token));
+
+    const res = await claimWithSession(kv, {
+      id: sessionId,
+      status: 'complete',
+      payment_status: 'paid',
+      metadata: { type: 'deposit', caseId },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { token: string; caseId: string };
+    expect(body.caseId).toBe(caseId);
+    expect(body.token).not.toBe(token);
+    expect(await kv.get(tokenKey('upload', body.token))).toBe(caseId);
+  });
+
+  it('rejects an unpaid deposit session', async () => {
+    const { kv } = await setup();
+    const res = await claimWithSession(kv, {
+      id: sessionId,
+      status: 'open',
+      payment_status: 'unpaid',
+      metadata: { type: 'deposit', caseId },
+    });
+    expect(res.status).toBe(402);
+    const rec = await getCase(kv as unknown as KVNamespace, caseId);
+    expect(rec?.status).toBe('deposited');
+    expect(rec?.uploadToken).toBeUndefined();
   });
 });

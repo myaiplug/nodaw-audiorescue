@@ -1,0 +1,16 @@
+# Static-asset exclude list for Cloudflare Pages (. is the build output).
+.git/
+.superpowers/
+.wrangler/
+node_modules/
+tests/
+docs/
+functions/
+package.json
+package-lock.json
+package*.json
+*.md
+.dev.vars
+.dev.vars.example
+wrangler.toml
+.gitignore

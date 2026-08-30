@@ -1,5 +1,6 @@
 import type { Env } from '../../lib/env';
 import { newCaseId, putCase, type CaseRecord } from '../../lib/cases';
+import { clientIp, consumeRateLimit, rateLimitKey } from '../../lib/rate-limit';
 import { depositCheckoutFields, stripeForm } from '../../lib/stripe';
 
 const NAME_MAX = 200;
@@ -48,8 +49,10 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-export async function onRequestPost(context: { request: Request; env: Env }): Promise<Response> {
-  const { request, env } = context;
+export async function processDeposit(
+  request: Request,
+  env: Pick<Env, 'CASES' | 'STRIPE_SECRET_KEY' | 'PUBLIC_BASE_URL'>,
+): Promise<Response> {
   let body: unknown;
   try {
     body = await request.json();
@@ -59,6 +62,9 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
 
   const parsed = validateDepositInput(body);
   if (!parsed.ok) return json({ error: parsed.error }, 400);
+
+  const limited = await consumeRateLimit(env.CASES, rateLimitKey('deposit', clientIp(request)));
+  if (!limited.ok) return json({ error: 'Too many requests' }, 429);
 
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'Stripe is not configured' }, 500);
   if (!env.PUBLIC_BASE_URL) return json({ error: 'PUBLIC_BASE_URL is not configured' }, 500);
@@ -93,4 +99,8 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
     console.error('Stripe checkout failed', err);
     return json({ error: 'Checkout failed' }, 502);
   }
+}
+
+export async function onRequestPost(context: { request: Request; env: Env }): Promise<Response> {
+  return processDeposit(context.request, context.env);
 }

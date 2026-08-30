@@ -37,6 +37,7 @@ export interface CaseRecord {
   declineNote?: string;
   balanceCheckoutUrl?: string;
   downloadLinks?: DownloadLink[];
+  uploadToken?: string;
 }
 
 export function caseKey(id: string): string {
