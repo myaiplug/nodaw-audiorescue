@@ -130,12 +130,14 @@ Note the deployment URL. Set `PUBLIC_BASE_URL` to that origin (or your custom do
 1. Switch secrets to **live** Stripe keys and live webhook signing secret.
 2. Run one real **$19.50** deposit.
 3. Verify webhook + upload mint.
-4. **Refund** the PaymentIntent/charge in Stripe Dashboard (full refund for the dry-run).
+4. **Refund** the PaymentIntent/charge in Stripe Dashboard (full refund for the dry-run). A Dashboard refund does **not** clear case status `deposited` via webhook (`charge.refunded` is acknowledged only).
 5. Confirm no secrets or customer audio were committed to git; R2 remains private.
 
 ---
 
 ## Step 5 — Custom domain / retire GitHub Pages as primary
+
+**Prefer Option A.** Option B is only a temporary pointer away from the old `github.io` URL.
 
 ### Option A — Custom domain on Cloudflare Pages (preferred)
 
@@ -143,11 +145,19 @@ Cloudflare Dashboard → Pages → `nodaw-audiorescue` → Custom domains → ad
 
 Set `PUBLIC_BASE_URL` to `https://your.domain` (no trailing slash) and update the Stripe webhook URL to match.
 
-### Option B — Redirect GitHub Pages → Cloudflare
+### Option B — Redirect GitHub Pages → Cloudflare (safe sources only)
 
-Until DNS is ready, keep https://myaiplug.github.io/nodaw-audiorescue/ as a pointer only:
+Until DNS is ready, you may keep https://myaiplug.github.io/nodaw-audiorescue/ as a pointer only.
 
-1. Replace the GitHub Pages `index.html` (on the Pages-publishing branch) with a short meta refresh + canonical/link to the Cloudflare URL, for example:
+**Warning — do not destroy the Cloudflare landing page.** This repo’s `index.html` on the branch Cloudflare Pages deploys (`main`, or whatever Pages is connected to) is the **production** Mix Rescue landing page. **Do NOT** replace that file with a meta-refresh stub. Overwriting it and redeploying will wipe the live Cloudflare site.
+
+Safe Option B approaches (pick one):
+
+1. **Unpublish** GitHub Pages for this repo, or change marketing links to the Cloudflare URL and leave GH Pages alone.
+2. Use a **dedicated redirect-only** GitHub Pages source (separate branch or separate repo that GH Pages publishes) — never the Cloudflare deploy branch’s production assets.
+3. Use an **external** DNS/HTTP redirect (registrar, Cloudflare DNS on another zone, etc.) from the old hostname to the Pages URL.
+
+If you maintain a redirect-only GH Pages source, its HTML may look like:
 
 ```html
 <!DOCTYPE html>
@@ -165,14 +175,14 @@ Until DNS is ready, keep https://myaiplug.github.io/nodaw-audiorescue/ as a poin
 </html>
 ```
 
-2. Do **not** treat GitHub Pages as the app host — it cannot run Functions, R2, or Stripe webhooks.
+Do **not** treat GitHub Pages as the app host — it cannot run Functions, R2, or Stripe webhooks.
 
 ### After cutover
 
 - [ ] Stripe webhook URL matches production origin
 - [ ] `PUBLIC_BASE_URL` matches production origin
 - [ ] Marketing / social links point at Cloudflare (or custom domain)
-- [ ] GitHub Pages is redirect-only or unpublished
+- [ ] GitHub Pages is redirect-only (separate source), unpublished, or unused — production `index.html` on the Cloudflare deploy branch untouched
 
 ---
 
