@@ -1,0 +1,12 @@
+name = "nodaw-audiorescue"
+compatibility_date = "2026-08-01"
+pages_build_output_dir = "."
+
+[[r2_buckets]]
+binding = "AUDIO"
+bucket_name = "nodaw-audiorescue"
+
+[[kv_namespaces]]
+binding = "CASES"
+id = "REPLACE_AFTER_CREATE"
+preview_id = "REPLACE_AFTER_CREATE"
