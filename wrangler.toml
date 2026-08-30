@@ -2,6 +2,11 @@ name = "nodaw-audiorescue"
 compatibility_date = "2026-08-01"
 pages_build_output_dir = "."
 
+# Pages Functions: files under functions/ map to routes
+# (functions/api/checkout/deposit.ts → POST /api/checkout/deposit).
+# Secrets (STRIPE_*, DISCORD_WEBHOOK_URL, PUBLIC_BASE_URL, OPS_PASSWORD)
+# come from .dev.vars locally and Pages env in production — never commit them.
+
 [[r2_buckets]]
 binding = "AUDIO"
 bucket_name = "nodaw-audiorescue"

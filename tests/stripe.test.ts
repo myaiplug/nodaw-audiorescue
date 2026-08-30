@@ -1,0 +1,219 @@
+import { createHmac } from 'node:crypto';
+import { describe, it, expect } from 'vitest';
+import {
+  DEPOSIT_AMOUNT_CENTS,
+  depositCheckoutFields,
+  stripeForm,
+  stripeEventKey,
+  verifyStripeSignature,
+} from '../functions/lib/stripe';
+import { validateDepositInput } from '../functions/api/checkout/deposit';
+import { processStripeWebhook } from '../functions/api/webhooks/stripe';
+import { caseKey, getCase, putCase, type CaseRecord } from '../functions/lib/cases';
+import { tokenKey } from '../functions/lib/tokens';
+
+function memoryKv() {
+  const data = new Map<string, string>();
+  return {
+    data,
+    async get(key: string) {
+      return data.get(key) ?? null;
+    },
+    async put(key: string, value: string, _opts?: { expirationTtl?: number }) {
+      data.set(key, value);
+    },
+    async delete(key: string) {
+      data.delete(key);
+    },
+  };
+}
+
+function sign(payload: string, secret: string, t: number): string {
+  const v1 = createHmac('sha256', secret).update(`${t}.${payload}`).digest('hex');
+  return `t=${t},v1=${v1}`;
+}
+
+const secret = 'whsec_test_secret';
+
+describe('depositCheckoutFields', () => {
+  it('charges 1950 cents USD with deposit metadata', () => {
+    const fields = depositCheckoutFields({
+      caseId: 'case-1',
+      email: 'a@b.co',
+      publicBaseUrl: 'http://localhost:8788/',
+    });
+    expect(fields['line_items[0][price_data][unit_amount]']).toBe('1950');
+    expect(DEPOSIT_AMOUNT_CENTS).toBe(1950);
+    expect(fields['line_items[0][price_data][currency]']).toBe('usd');
+    expect(fields.mode).toBe('payment');
+    expect(fields['metadata[type]']).toBe('deposit');
+    expect(fields['metadata[caseId]']).toBe('case-1');
+    expect(fields.customer_email).toBe('a@b.co');
+    expect(fields.success_url).toContain('session_id={CHECKOUT_SESSION_ID}');
+    expect(fields.success_url).toContain('case=case-1');
+    expect(fields.cancel_url).toBe('http://localhost:8788/');
+  });
+});
+
+describe('validateDepositInput', () => {
+  it('accepts name, email, notes, service', () => {
+    const r = validateDepositInput({
+      name: ' Ada ',
+      email: 'ada@example.com',
+      notes: 'clipped vocal',
+      service: 'Rush vocal cleanup',
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.name).toBe('Ada');
+      expect(r.value.email).toBe('ada@example.com');
+    }
+  });
+
+  it('rejects missing name and bad email', () => {
+    expect(validateDepositInput({ name: '', email: 'ada@example.com', service: 'x' }).ok).toBe(
+      false,
+    );
+    expect(validateDepositInput({ name: 'Ada', email: 'not-an-email', service: 'x' }).ok).toBe(
+      false,
+    );
+  });
+});
+
+describe('stripeForm', () => {
+  it('POSTs form-urlencoded with Bearer secret', async () => {
+    const orig = globalThis.fetch;
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response(JSON.stringify({ id: 'cs_test', url: 'https://checkout.stripe.com/c/pay/cs_test' }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    try {
+      const out = await stripeForm('sk_test_x', 'checkout/sessions', { mode: 'payment' });
+      expect(out).toEqual({ id: 'cs_test', url: 'https://checkout.stripe.com/c/pay/cs_test' });
+      expect(calls[0].url).toBe('https://api.stripe.com/v1/checkout/sessions');
+      const headers = calls[0].init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer sk_test_x');
+      expect(headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+      expect(calls[0].init.body).toBeInstanceOf(URLSearchParams);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});
+
+describe('verifyStripeSignature', () => {
+  const payload = '{"id":"evt_1","type":"checkout.session.completed"}';
+  const t = 1_700_000_000;
+
+  it('accepts a valid v1 HMAC', async () => {
+    const r = await verifyStripeSignature(payload, sign(payload, secret, t), secret, t);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a bad signature', async () => {
+    const r = await verifyStripeSignature(payload, `t=${t},v1=${'ab'.repeat(32)}`, secret, t);
+    expect(r.ok).toBe(false);
+  });
+
+  it('rejects timestamp skew over 300s', async () => {
+    const r = await verifyStripeSignature(payload, sign(payload, secret, t), secret, t + 301);
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('processStripeWebhook deposit', () => {
+  const caseId = '11111111-1111-4111-8111-111111111111';
+  const eventId = 'evt_deposit_1';
+  const now = 1_700_000_000;
+
+  function draftCase(): CaseRecord {
+    return {
+      id: caseId,
+      email: 'artist@example.com',
+      name: 'Ada',
+      notes: 'sibilance',
+      service: 'Rush vocal cleanup',
+      status: 'draft',
+      stripeDepositPi: null,
+      stripeBalancePi: null,
+      createdAt: '2026-08-29T00:00:00.000Z',
+    };
+  }
+
+  function depositEvent(overrides: Record<string, unknown> = {}) {
+    return JSON.stringify({
+      id: eventId,
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_test_1',
+          payment_intent: 'pi_deposit_1',
+          metadata: { type: 'deposit', caseId },
+          ...overrides,
+        },
+      },
+    });
+  }
+
+  it('marks deposited, stores PI, mints upload token, is idempotent', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, draftCase());
+    const discord: string[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      discord.push(String(init?.body ?? ''));
+      return new Response('ok', { status: 204 });
+    }) as typeof fetch;
+
+    try {
+      const payload = depositEvent();
+      const env = {
+        CASES: kv as unknown as KVNamespace,
+        STRIPE_WEBHOOK_SECRET: secret,
+        DISCORD_WEBHOOK_URL: 'https://discord.example/webhook',
+        PUBLIC_BASE_URL: 'http://localhost:8788',
+      };
+
+      const first = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+      expect(first.status).toBe(200);
+
+      const rec = await getCase(env.CASES, caseId);
+      expect(rec?.status).toBe('deposited');
+      expect(rec?.stripeDepositPi).toBe('pi_deposit_1');
+      expect(await kv.get(stripeEventKey(eventId))).toBe('1');
+
+      const tokEntries = [...kv.data.entries()].filter(([k]) =>
+        k.startsWith(tokenKey('upload', '')),
+      );
+      expect(tokEntries).toHaveLength(1);
+      expect(tokEntries[0][1]).toBe(caseId);
+      expect(discord.join('')).toContain(`New deposit ${caseId} artist@example.com`);
+      expect(discord.join('')).toContain('upload.html?');
+
+      const second = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+      expect(second.status).toBe(200);
+      const tokAfter = [...kv.data.entries()].filter(([k]) => k.startsWith('tok:upload:'));
+      expect(tokAfter).toHaveLength(1);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it('ignores non-deposit checkout completion', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, draftCase());
+    const payload = depositEvent({ metadata: { type: 'balance', caseId } });
+    const env = {
+      CASES: kv as unknown as KVNamespace,
+      STRIPE_WEBHOOK_SECRET: secret,
+      PUBLIC_BASE_URL: 'http://localhost:8788',
+    };
+    const res = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+    expect(res.status).toBe(200);
+    expect((await getCase(env.CASES, caseId))?.status).toBe('draft');
+    expect(await kv.get(caseKey(caseId))).toBeTruthy();
+  });
+});
