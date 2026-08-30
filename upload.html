@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Upload your mix for NoDAW Mix Rescue. MP3 or WAV, five minutes max.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="data:,">
+  <title>NO/DAW MIX RESCUE // UPLOAD</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root{--paper:#e7e2d8;--ink:#0b0c0c;--acid:#d8ff35;--orange:#ff5c1b;--steel:#9ca2a0;--line:rgba(231,226,216,.22);--dim:#a2a49f}
+    *{box-sizing:border-box}html{background:var(--ink);color:var(--paper)}
+    body{margin:0;font-family:"Space Grotesk",Arial,sans-serif;background:radial-gradient(circle at 70% 4%,#31312b 0,transparent 33rem),var(--ink);min-height:100vh}
+    body:before{content:"";pointer-events:none;position:fixed;inset:0;z-index:20;opacity:.10;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");mix-blend-mode:screen}
+    .shell{width:min(720px,calc(100% - 36px));margin:auto;position:relative;z-index:1}
+    .topline{border-bottom:1px solid var(--line);font:500 10px/1 "DM Mono",monospace;letter-spacing:.12em;padding:10px 0;color:var(--dim);display:flex;justify-content:space-between;text-transform:uppercase}
+    .nav{height:80px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+    .mark{font-weight:700;font-size:19px;letter-spacing:-.08em;line-height:.78}
+    .mark i{font-style:normal;color:var(--acid)}
+    .division{font:500 10px "DM Mono",monospace;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;text-align:right}
+    .kicker{font:500 10px "DM Mono",monospace;letter-spacing:.18em;color:var(--orange);text-transform:uppercase;margin:36px 0 14px}
+    h1{font-size:clamp(36px,7vw,56px);line-height:.92;letter-spacing:-.04em;margin:0 0 14px;font-weight:600}
+    h1 span{color:var(--acid)}
+    .lede{color:var(--steel);font-size:16px;line-height:1.55;margin:0 0 28px;max-width:46ch}
+    .meta{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 22px}
+    .meta div{border:1px solid var(--line);padding:12px 16px;min-width:120px}
+    .meta .k{font:500 9px "DM Mono",monospace;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:6px}
+    .meta .v{font:700 14px "DM Mono",monospace;color:var(--paper);word-break:break-all}
+    .drop{border:1px dashed var(--line);padding:42px 22px;text-align:center;cursor:pointer;transition:border-color .18s ease,background .18s ease}
+    .drop:hover,.drop.hot{border-color:var(--acid);background:#16180c}
+    .drop.busy{opacity:.55;pointer-events:none}
+    .drop h2{margin:0 0 8px;font-size:22px;letter-spacing:-.03em}
+    .drop p{margin:0;color:var(--steel);font-size:13px;line-height:1.5}
+    .drop input{position:absolute;opacity:0;width:0;height:0}
+    .rules{margin:16px 0 0;font:400 10px "DM Mono",monospace;letter-spacing:.08em;color:var(--dim);line-height:1.7;text-transform:uppercase}
+    .error{display:none;color:#ff7a52;font:500 11px "DM Mono",monospace;letter-spacing:.04em;margin:18px 0 0;padding:10px 12px;border:1px solid #ff5c1b44;background:#2a0e06}
+    .error.show{display:block}
+    .status{font:500 11px "DM Mono",monospace;letter-spacing:.06em;color:var(--dim);margin:16px 0 0;min-height:1.2em}
+    .success{border:1px solid #d8ff3566;background:#20270a;padding:28px 22px;margin-top:8px}
+    .success h2{margin:0 0 10px;font-size:28px;letter-spacing:-.03em;color:var(--acid)}
+    .success p{margin:0;color:var(--steel);font-size:14px;line-height:1.6}
+    .fine{font:400 10px "DM Mono",monospace;line-height:1.7;letter-spacing:.06em;color:var(--dim);border-top:1px solid var(--line);padding:26px 0 60px;text-align:center;margin-top:48px}
+    a{color:var(--acid)}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topline"><span>NO/DAW // AUDIO RESCUE DIVISION</span><span>SECURE UPLOAD</span></div>
+    <nav class="nav">
+      <div class="mark">NO<i>/</i>DAW<br>LABS</div>
+      <div class="division">CASE FILE // UPLOAD<br>ONE TRACK · ONE NIGHT</div>
+    </nav>
+    <p class="kicker">Post-deposit · tokenized drop</p>
+    <h1>Send the<br><span>file.</span></h1>
+    <p class="lede">MP3 or WAV only. Five minutes, fifty megs, magic bytes checked on the server. Deposit already held — this is the last gate before the queue.</p>
+    <div class="meta" id="meta" hidden>
+      <div><span class="k">CASE</span><span class="v" id="case-id">—</span></div>
+      <div><span class="k">FORMAT</span><span class="v">MP3 / WAV</span></div>
+      <div><span class="k">CAP</span><span class="v">5:00 · 50 MB</span></div>
+    </div>
+    <div id="picker">
+      <label class="drop" id="drop" for="file">
+        <input id="file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" disabled>
+        <h2>Drop the mix</h2>
+        <p>Click or drop a single MP3 or WAV.<br>We’ll decode duration in the browser, then ship it to the lab.</p>
+      </label>
+      <p class="rules">No stems · no M4A · no Drive links · token burns on success</p>
+    </div>
+    <div class="error" id="error" role="alert"></div>
+    <p class="status" id="status"></p>
+    <div class="success" id="success" hidden>
+      <h2>Case in queue.</h2>
+      <p>The file is on the lab disk. You’ll get a straight call — fit, not a fit, or re-record — before anybody burns a pass.</p>
+    </div>
+    <footer class="fine">NODAW LABS // MIX RESCUE · SOURCE STAYS PRIVATE ON R2 · <a href="/">BACK TO THE FLOOR</a></footer>
+  </div>
+  <script type="module" src="./js/upload.js"></script>
+</body>
+</html>
