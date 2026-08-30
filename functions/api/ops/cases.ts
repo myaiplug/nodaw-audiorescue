@@ -188,6 +188,7 @@ export async function processOpsCases(
         env.STRIPE_SECRET_KEY,
         'refunds',
         declineRefundFields({ paymentIntentId: record.stripeDepositPi, caseId: record.id }),
+        { 'Idempotency-Key': `decline:${record.id}` },
       );
     } catch (err) {
       console.error('Stripe refund failed', err);
@@ -265,12 +266,17 @@ export async function processOpsCases(
     }
 
     try {
-      const { url } = await createBalanceCheckout(env.STRIPE_SECRET_KEY, {
-        caseId: record.id,
-        email: record.email,
-        publicBaseUrl: env.PUBLIC_BASE_URL,
-      });
-      record.balanceCheckoutUrl = url;
+      const session = await createBalanceCheckout(
+        env.STRIPE_SECRET_KEY,
+        {
+          caseId: record.id,
+          email: record.email,
+          publicBaseUrl: env.PUBLIC_BASE_URL,
+        },
+        record.stripeBalanceSessionId,
+      );
+      record.balanceCheckoutUrl = session.url;
+      record.stripeBalanceSessionId = session.id;
       record.status = 'balance_due';
       await putCase(env.CASES, record);
     } catch (err) {

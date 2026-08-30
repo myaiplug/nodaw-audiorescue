@@ -135,7 +135,7 @@ async function postOps(opts: {
       return new Response(null, { status: 204 });
     }
     if (opts.stripe) return opts.stripe(u, init);
-    return new Response(JSON.stringify({ id: 'obj', url: 'https://checkout.stripe.com/c/pay/cs_bal' }), {
+    return new Response(JSON.stringify({ id: 'cs_bal', url: 'https://checkout.stripe.com/c/pay/cs_bal' }), {
       status: 200,
     });
   }) as typeof fetch;
@@ -187,7 +187,7 @@ describe('POST /api/ops/cases', () => {
   it('declines with a 1450 refund, marks declined, notifies Discord', async () => {
     const kv = memoryKv();
     await putCase(kv as unknown as KVNamespace, uploadedCase());
-    const stripeCalls: Array<{ url: string; body: string }> = [];
+    const stripeCalls: Array<{ url: string; body: string; headers: Record<string, string> }> = [];
     const discord: string[] = [];
     const pending: Promise<unknown>[] = [];
     const res = await postOps({
@@ -196,7 +196,11 @@ describe('POST /api/ops/cases', () => {
       discord,
       waitUntil: (p) => pending.push(p),
       stripe: async (url, init) => {
-        stripeCalls.push({ url, body: String(init?.body ?? '') });
+        stripeCalls.push({
+          url,
+          body: String(init?.body ?? ''),
+          headers: (init?.headers ?? {}) as Record<string, string>,
+        });
         return new Response(JSON.stringify({ id: 're_1' }), { status: 200 });
       },
     });
@@ -206,6 +210,7 @@ describe('POST /api/ops/cases', () => {
     expect(stripeCalls[0].body).toContain(`amount=${DECLINE_REFUND_CENTS}`);
     expect(stripeCalls[0].body).toContain('payment_intent=pi_deposit_1');
     expect(stripeCalls[0].body).toContain('not_a_fit_review_fee_kept');
+    expect(stripeCalls[0].headers['Idempotency-Key']).toBe(`decline:${caseId}`);
     const rec = await getCase(kv as unknown as KVNamespace, caseId);
     expect(rec?.status).toBe('declined');
     expect(rec?.declineNote).toBe('not a fit');
@@ -283,8 +288,83 @@ describe('POST /api/ops/cases', () => {
     expect(rec?.r2RescueWav).toBe(`cases/${caseId}/rescue.wav`);
     expect(rec?.r2Notes).toBe(`cases/${caseId}/notes.txt`);
     expect(r2.objects.get(`cases/${caseId}/rescue.wav`)?.contentType).toBe('audio/wav');
+    expect(rec?.stripeBalanceSessionId).toBe('cs_bal');
     expect(discord.join('')).toContain(`Rescued ${caseId} artist@example.com`);
     expect(discord.join('')).toContain('$19.50');
+  });
+
+  it('expires a previous open balance session before creating another', async () => {
+    const kv = memoryKv();
+    const rec = uploadedCase();
+    rec.status = 'balance_due';
+    rec.stripeBalanceSessionId = 'cs_old';
+    rec.balanceCheckoutUrl = 'https://checkout.stripe.com/c/pay/cs_old';
+    await putCase(kv as unknown as KVNamespace, rec);
+    const calls: string[] = [];
+    const res = await postOps({
+      kv,
+      body: { action: 'mark_rescued', caseId },
+      stripe: async (url, init) => {
+        calls.push(`${init?.method ?? 'GET'} ${url}`);
+        const u = String(url);
+        if (u.endsWith('/expire')) {
+          return new Response(JSON.stringify({ id: 'cs_old', status: 'expired' }), { status: 200 });
+        }
+        if (u.includes('/checkout/sessions/cs_old')) {
+          return new Response(
+            JSON.stringify({ id: 'cs_old', status: 'open', payment_status: 'unpaid' }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({ id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/cs_new' }),
+          { status: 200 },
+        );
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(calls.some((c) => c.includes('/checkout/sessions/cs_old') && !c.includes('/expire'))).toBe(
+      true,
+    );
+    expect(calls.some((c) => c.includes('/checkout/sessions/cs_old/expire'))).toBe(true);
+    const updated = await getCase(kv as unknown as KVNamespace, caseId);
+    expect(updated?.stripeBalanceSessionId).toBe('cs_new');
+    expect(updated?.balanceCheckoutUrl).toContain('cs_new');
+  });
+
+  it('does not create a new balance session if the previous one is already paid', async () => {
+    const kv = memoryKv();
+    const rec = uploadedCase();
+    rec.status = 'balance_due';
+    rec.stripeBalanceSessionId = 'cs_paid';
+    await putCase(kv as unknown as KVNamespace, rec);
+    let created = 0;
+    const origErr = console.error;
+    console.error = () => {};
+    try {
+      const res = await postOps({
+        kv,
+        body: { action: 'mark_rescued', caseId },
+        stripe: async (url) => {
+          const u = String(url);
+          if (u.includes('/checkout/sessions/cs_paid')) {
+            return new Response(
+              JSON.stringify({ id: 'cs_paid', status: 'complete', payment_status: 'paid' }),
+              { status: 200 },
+            );
+          }
+          if (u.endsWith('/checkout/sessions')) created += 1;
+          return new Response(JSON.stringify({ id: 'cs_new', url: 'https://checkout.stripe.com/x' }), {
+            status: 200,
+          });
+        },
+      });
+      expect(res.status).toBe(502);
+      expect(created).toBe(0);
+      expect((await getCase(kv as unknown as KVNamespace, caseId))?.stripeBalanceSessionId).toBe('cs_paid');
+    } finally {
+      console.error = origErr;
+    }
   });
 
   it('source_url mints an ops download token', async () => {

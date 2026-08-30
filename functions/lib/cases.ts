@@ -28,6 +28,7 @@ export interface CaseRecord {
   status: CaseStatus;
   stripeDepositPi: string | null;
   stripeBalancePi: string | null;
+  stripeBalanceSessionId?: string | null;
   createdAt: string;
   r2Key?: string;
   r2RescueWav?: string;

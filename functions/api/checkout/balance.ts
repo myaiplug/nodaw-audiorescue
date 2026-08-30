@@ -40,15 +40,20 @@ export async function processBalanceCheckout(
   }
 
   try {
-    const { url } = await createBalanceCheckout(env.STRIPE_SECRET_KEY, {
-      caseId: record.id,
-      email: record.email,
-      publicBaseUrl: env.PUBLIC_BASE_URL,
-    });
-    record.balanceCheckoutUrl = url;
+    const session = await createBalanceCheckout(
+      env.STRIPE_SECRET_KEY,
+      {
+        caseId: record.id,
+        email: record.email,
+        publicBaseUrl: env.PUBLIC_BASE_URL,
+      },
+      record.stripeBalanceSessionId,
+    );
+    record.balanceCheckoutUrl = session.url;
+    record.stripeBalanceSessionId = session.id;
     if (record.status === 'rescued') record.status = 'balance_due';
     await putCase(env.CASES, record);
-    return json({ url, caseId: record.id, status: record.status });
+    return json({ url: session.url, caseId: record.id, status: record.status });
   } catch (err) {
     console.error('Stripe balance checkout failed', err);
     return json({ error: 'Checkout failed' }, 502);

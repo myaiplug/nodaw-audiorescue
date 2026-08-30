@@ -421,4 +421,69 @@ describe('processStripeWebhook balance', () => {
       globalThis.fetch = orig;
     }
   });
+
+  it('refunds a duplicate balance payment in full and does not remint', async () => {
+    const kv = memoryKv();
+    const rec = rescuedCase();
+    rec.status = 'paid_in_full';
+    rec.stripeBalancePi = 'pi_balance_1';
+    rec.downloadLinks = [];
+    await putCase(kv as unknown as KVNamespace, rec);
+    const discord: string[] = [];
+    const stripeCalls: Array<{ url: string; body: string; headers: Record<string, string> }> = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('discord')) {
+        discord.push(String(init?.body ?? ''));
+        return new Response(null, { status: 204 });
+      }
+      stripeCalls.push({
+        url: u,
+        body: String(init?.body ?? ''),
+        headers: (init?.headers ?? {}) as Record<string, string>,
+      });
+      return new Response(JSON.stringify({ id: 're_dup' }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const payload = JSON.stringify({
+        id: 'evt_balance_dup',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_bal_2',
+            payment_intent: 'pi_balance_2',
+            metadata: { type: 'balance', caseId },
+          },
+        },
+      });
+      const env = {
+        CASES: kv as unknown as KVNamespace,
+        STRIPE_WEBHOOK_SECRET: secret,
+        STRIPE_SECRET_KEY: 'sk_test_x',
+        DISCORD_WEBHOOK_URL: 'https://discord.example/webhook',
+        PUBLIC_BASE_URL: 'http://localhost:8788',
+      };
+      const pending: Promise<unknown>[] = [];
+      const res = await processStripeWebhook(
+        payload,
+        sign(payload, secret, now),
+        env,
+        now,
+        (p) => pending.push(p),
+      );
+      expect(res.status).toBe(200);
+      await Promise.all(pending);
+      expect(stripeCalls[0].url).toBe('https://api.stripe.com/v1/refunds');
+      expect(stripeCalls[0].body).toContain('payment_intent=pi_balance_2');
+      expect(stripeCalls[0].body).not.toContain('amount=');
+      expect(stripeCalls[0].headers['Idempotency-Key']).toBe('dup-balance:evt_balance_dup');
+      expect((await getCase(env.CASES, caseId))?.status).toBe('paid_in_full');
+      expect([...kv.data.keys()].filter((k) => k.startsWith('tok:download:'))).toHaveLength(0);
+      expect(discord.join('')).toContain('ALERT duplicate balance payment');
+      expect(discord.join('')).toContain('pi_balance_2');
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { processDownload } from '../functions/api/download';
+import { processDownloadList } from '../functions/api/download/list';
 import { putCase, type CaseRecord } from '../functions/lib/cases';
 import { mintDownloadLinks, mintToken, tokenKey } from '../functions/lib/tokens';
 
@@ -69,6 +70,7 @@ function paidCase(): CaseRecord {
     status: 'paid_in_full',
     stripeDepositPi: 'pi_deposit_1',
     stripeBalancePi: 'pi_balance_1',
+    stripeBalanceSessionId: 'cs_bal_1',
     createdAt: '2026-08-29T00:00:00.000Z',
     r2Key: `cases/${caseId}/source.wav`,
     r2RescueWav: `cases/${caseId}/rescue.wav`,
@@ -127,58 +129,58 @@ describe('GET /api/download', () => {
     );
     expect(res.status).toBe(402);
     expect(await res.json()).toMatchObject({ error: 'Balance required to download', status: 'balance_due' });
+    expect(await kv.get(tokenKey('download', token))).toBeNull();
   });
 
-  it('lists links for a paid case and remints after burn', async () => {
+  it('returns 500 and does not stream if consume fails', async () => {
     const kv = memoryKv();
     const r2 = memoryR2();
     const rec = paidCase();
-    const links = await mintDownloadLinks(kv as unknown as KVNamespace, rec, 3600);
-    rec.downloadLinks = links;
+    await r2.put(rec.r2RescueWav!, new TextEncoder().encode('RIFF').buffer, {
+      httpMetadata: { contentType: 'audio/wav' },
+    });
+    const token = await mintToken(
+      kv as unknown as KVNamespace,
+      'download',
+      JSON.stringify({
+        caseId,
+        r2Key: rec.r2RescueWav,
+        filename: 'rescue.wav',
+      }),
+      3600,
+    );
     await putCase(kv as unknown as KVNamespace, rec);
-    await r2.put(rec.r2Key!, new ArrayBuffer(4), { httpMetadata: { contentType: 'audio/wav' } });
-    await r2.put(rec.r2RescueWav!, new ArrayBuffer(4), { httpMetadata: { contentType: 'audio/wav' } });
-    await r2.put(rec.r2Notes!, new ArrayBuffer(4), { httpMetadata: { contentType: 'text/plain' } });
-
-    const listed = await processDownload(
-      new Request(`http://localhost/api/download?case=${caseId}`),
-      { CASES: kv as unknown as KVNamespace, AUDIO: r2 as unknown as R2Bucket },
-    );
-    expect(listed.status).toBe(200);
-    const first = (await listed.json()) as { links: Array<{ url: string; kind: string }> };
-    expect(first.links.length).toBe(3);
-
-    const token = new URL(first.links[0].url, 'http://localhost').searchParams.get('token')!;
-    const dl = await processDownload(
-      new Request(`http://localhost/api/download?token=${token}`),
-      { CASES: kv as unknown as KVNamespace, AUDIO: r2 as unknown as R2Bucket },
-    );
-    expect(dl.status).toBe(200);
-
-    for (const l of first.links) {
-      const t = new URL(l.url, 'http://localhost').searchParams.get('token')!;
-      await kv.delete(tokenKey('download', t));
+    const origDelete = kv.delete.bind(kv);
+    kv.delete = async () => {
+      throw new Error('kv down');
+    };
+    const origErr = console.error;
+    console.error = () => {};
+    try {
+      const res = await processDownload(
+        new Request(`http://localhost/api/download?token=${token}`),
+        { CASES: kv as unknown as KVNamespace, AUDIO: r2 as unknown as R2Bucket },
+      );
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Download failed' });
+    } finally {
+      kv.delete = origDelete;
+      console.error = origErr;
     }
-
-    const again = await processDownload(
-      new Request(`http://localhost/api/download?case=${caseId}`),
-      { CASES: kv as unknown as KVNamespace, AUDIO: r2 as unknown as R2Bucket },
-    );
-    const second = (await again.json()) as { links: Array<{ url: string }> };
-    expect(second.links.length).toBe(3);
-    expect(second.links[0].url).not.toBe(first.links[0].url);
+    expect(await kv.get(tokenKey('download', token))).toBeTruthy();
   });
 
-  it('returns 402 when listing a case that is not paid', async () => {
+  it('does not remint from a bare case id', async () => {
     const kv = memoryKv();
     const rec = paidCase();
-    rec.status = 'rescued';
+    rec.downloadLinks = await mintDownloadLinks(kv as unknown as KVNamespace, rec, 3600);
     await putCase(kv as unknown as KVNamespace, rec);
     const res = await processDownload(
       new Request(`http://localhost/api/download?case=${caseId}`),
       { CASES: kv as unknown as KVNamespace, AUDIO: memoryR2() as unknown as R2Bucket },
     );
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Missing download token' });
   });
 
   it('allows ops tokens before paid_in_full', async () => {
@@ -214,5 +216,94 @@ describe('GET /api/download', () => {
       AUDIO: memoryR2() as unknown as R2Bucket,
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/download/list', () => {
+  async function listWithSession(
+    kv: ReturnType<typeof memoryKv>,
+    session: Record<string, unknown>,
+    sessionId = 'cs_bal_1',
+  ): Promise<Response> {
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      expect(String(url)).toContain(`/checkout/sessions/${sessionId}`);
+      return new Response(JSON.stringify(session), { status: 200 });
+    }) as typeof fetch;
+    try {
+      return await processDownloadList(
+        new Request(`http://localhost/api/download/list?session_id=${sessionId}`),
+        { CASES: kv as unknown as KVNamespace, STRIPE_SECRET_KEY: 'sk_test_x' },
+      );
+    } finally {
+      globalThis.fetch = orig;
+    }
+  }
+
+  it('returns live links for a paid Stripe balance session', async () => {
+    const kv = memoryKv();
+    const rec = paidCase();
+    rec.downloadLinks = await mintDownloadLinks(kv as unknown as KVNamespace, rec, 3600);
+    await putCase(kv as unknown as KVNamespace, rec);
+    const res = await listWithSession(kv, {
+      id: 'cs_bal_1',
+      status: 'complete',
+      payment_status: 'paid',
+      metadata: { type: 'balance', caseId },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { links: Array<{ url: string }>; caseId: string };
+    expect(body.caseId).toBe(caseId);
+    expect(body.links).toHaveLength(3);
+    expect(body.links[0].url).toContain('/api/download?token=');
+  });
+
+  it('remints only after every token is burned, when the session is still paid', async () => {
+    const kv = memoryKv();
+    const rec = paidCase();
+    const first = await mintDownloadLinks(kv as unknown as KVNamespace, rec, 3600);
+    rec.downloadLinks = first;
+    await putCase(kv as unknown as KVNamespace, rec);
+    for (const l of first) await kv.delete(tokenKey('download', l.token));
+
+    const res = await listWithSession(kv, {
+      id: 'cs_bal_1',
+      status: 'complete',
+      payment_status: 'paid',
+      metadata: { type: 'balance', caseId },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { links: Array<{ url: string }> };
+    expect(body.links).toHaveLength(3);
+    const newToken = new URL(body.links[0].url, 'http://localhost').searchParams.get('token')!;
+    expect(first.some((l) => l.token === newToken)).toBe(false);
+  });
+
+  it('rejects a bare unpaid or non-balance session', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, paidCase());
+    const unpaid = await listWithSession(kv, {
+      id: 'cs_bal_1',
+      status: 'open',
+      payment_status: 'unpaid',
+      metadata: { type: 'balance', caseId },
+    });
+    expect(unpaid.status).toBe(402);
+
+    const deposit = await listWithSession(kv, {
+      id: 'cs_bal_1',
+      status: 'complete',
+      payment_status: 'paid',
+      metadata: { type: 'deposit', caseId },
+    });
+    expect(deposit.status).toBe(403);
+  });
+
+  it('does not remint from case id without a Stripe session', async () => {
+    const res = await processDownloadList(new Request(`http://localhost/api/download/list?case=${caseId}`), {
+      CASES: memoryKv() as unknown as KVNamespace,
+      STRIPE_SECRET_KEY: 'sk_test_x',
+    });
+    expect(res.status).toBe(400);
   });
 });

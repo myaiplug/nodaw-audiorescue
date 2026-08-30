@@ -66,6 +66,7 @@
   <script>
     const params = new URLSearchParams(location.search);
     const caseId = (params.get('case') || '').trim();
+    const sessionId = (params.get('session_id') || '').trim();
     const $ = (id) => document.getElementById(id);
     const errorEl = $('error');
     const statusEl = $('status');
@@ -79,18 +80,20 @@
     if (caseId) {
       $('case-id').textContent = caseId;
       $('meta').hidden = false;
-    } else {
+    }
+
+    if (!sessionId) {
       $('headline').textContent = 'Payment received.';
-      $('copy').textContent = 'If you have a case id, append ?case= to this URL to pull signed downloads.';
+      $('copy').textContent = 'This page needs the Stripe session from checkout (thanks.html?session_id=…).';
     }
 
     let attempts = 0;
     async function poll() {
-      if (!caseId) return;
+      if (!sessionId) return;
       attempts += 1;
-      statusEl.textContent = 'Checking case…';
+      statusEl.textContent = 'Checking payment…';
       try {
-        const res = await fetch('/api/download?case=' + encodeURIComponent(caseId), { credentials: 'omit' });
+        const res = await fetch('/api/download/list?session_id=' + encodeURIComponent(sessionId), { credentials: 'omit' });
         const data = await res.json().catch(() => ({}));
         if (res.status === 402) {
           $('case-status').textContent = data.status || 'unpaid';
@@ -105,8 +108,10 @@
           return;
         }
         $('case-status').textContent = data.status || 'paid_in_full';
+        if (data.caseId) $('case-id').textContent = data.caseId;
+        $('meta').hidden = false;
         $('headline').textContent = 'Paid in full.';
-        $('copy').textContent = 'Download the rescued WAV, listening MP3, and notes. Each link burns after one grab; refresh the page to mint a new set (72h TTL).';
+        $('copy').textContent = 'Download the rescued WAV, listening MP3, and notes. Each link burns after one grab; refresh this page to mint a new set (72h TTL, Stripe session verified).';
         const list = data.links || [];
         if (!list.length) {
           statusEl.textContent = 'Paid, but no files are attached yet. Ping ops.';
@@ -123,7 +128,7 @@
       }
     }
 
-    if (caseId) poll();
+    if (sessionId) poll();
   </script>
 </body>
 </html>

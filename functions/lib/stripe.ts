@@ -9,14 +9,29 @@ export function stripeEventKey(eventId: string): string {
   return `event:${eventId}`;
 }
 
-export async function stripeForm(secret: string, path: string, body: Record<string, string>) {
+export async function stripeForm(
+  secret: string,
+  path: string,
+  body: Record<string, string>,
+  extraHeaders?: Record<string, string>,
+) {
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${secret}`,
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...extraHeaders,
     },
     body: new URLSearchParams(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function stripeGet(secret: string, path: string) {
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${secret}` },
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -77,15 +92,45 @@ export function declineRefundFields(opts: {
   };
 }
 
+export async function expirePreviousBalanceSession(
+  secret: string,
+  sessionId: string | null | undefined,
+): Promise<void> {
+  if (!sessionId) return;
+  const encoded = encodeURIComponent(sessionId);
+  let session: { status?: string; payment_status?: string };
+  try {
+    session = (await stripeGet(secret, `checkout/sessions/${encoded}`)) as typeof session;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/resource_missing|No such checkout/i.test(msg)) return;
+    throw err;
+  }
+  if (session.payment_status === 'paid' || session.status === 'complete') {
+    throw new Error('Previous balance session already paid');
+  }
+  if (session.status !== 'open') return;
+  try {
+    await stripeForm(secret, `checkout/sessions/${encoded}/expire`, {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/expired|complete|open state/i.test(msg)) return;
+    throw err;
+  }
+}
+
 export async function createBalanceCheckout(
   secret: string,
   opts: { caseId: string; email: string; publicBaseUrl: string },
-): Promise<{ url: string }> {
+  previousSessionId?: string | null,
+): Promise<{ url: string; id: string }> {
+  await expirePreviousBalanceSession(secret, previousSessionId);
   const session = (await stripeForm(secret, 'checkout/sessions', balanceCheckoutFields(opts))) as {
     url?: string;
+    id?: string;
   };
-  if (!session.url) throw new Error('Stripe session missing url');
-  return { url: session.url };
+  if (!session.url || !session.id) throw new Error('Stripe session missing url');
+  return { url: session.url, id: session.id };
 }
 
 export function parseStripeSignature(header: string): { t: number; v1: string[] } | null {

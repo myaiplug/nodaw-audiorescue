@@ -3,7 +3,9 @@ import { getCase, putCase } from '../../lib/cases';
 import { notifyDiscord } from '../../lib/discord';
 import {
   STRIPE_EVENT_TTL_SEC,
+  expirePreviousBalanceSession,
   stripeEventKey,
+  stripeForm,
   verifyStripeSignature,
 } from '../../lib/stripe';
 import { DOWNLOAD_TOKEN_TTL_SEC, mintDownloadLinks, mintToken } from '../../lib/tokens';
@@ -26,10 +28,9 @@ function paymentIntentId(pi: unknown): string | null {
   return null;
 }
 
-type WebhookEnv = Pick<
-  Env,
-  'CASES' | 'STRIPE_WEBHOOK_SECRET' | 'DISCORD_WEBHOOK_URL' | 'PUBLIC_BASE_URL'
->;
+type WebhookEnv = Pick<Env, 'CASES' | 'STRIPE_WEBHOOK_SECRET' | 'DISCORD_WEBHOOK_URL' | 'PUBLIC_BASE_URL'> & {
+  STRIPE_SECRET_KEY?: string;
+};
 
 export async function processStripeWebhook(
   rawBody: string,
@@ -81,6 +82,7 @@ export async function processStripeWebhook(
   if (!record) return json({ error: 'Unknown case' }, 400);
 
   let discordContent: string | null = null;
+  const sessionId = typeof session.id === 'string' ? session.id : '';
   if (metaType === 'deposit' && record.status === 'draft') {
     record.status = 'deposited';
     record.stripeDepositPi = paymentIntentId(session.payment_intent);
@@ -93,16 +95,48 @@ export async function processStripeWebhook(
     metaType === 'balance' &&
     (record.status === 'rescued' || record.status === 'balance_due')
   ) {
+    const previousSessionId = record.stripeBalanceSessionId;
     record.status = 'paid_in_full';
     record.stripeBalancePi = paymentIntentId(session.payment_intent);
+    if (sessionId) record.stripeBalanceSessionId = sessionId;
     const links = await mintDownloadLinks(env.CASES, record, DOWNLOAD_TOKEN_TTL_SEC);
     record.downloadLinks = links;
     await putCase(env.CASES, record);
+    if (previousSessionId && previousSessionId !== sessionId && env.STRIPE_SECRET_KEY) {
+      try {
+        await expirePreviousBalanceSession(env.STRIPE_SECRET_KEY, previousSessionId);
+      } catch (err) {
+        console.error('Expire leftover balance session failed', err);
+      }
+    }
     const base = (env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     const listed = links
       .map((l) => `${l.filename} ${base}/api/download?token=${encodeURIComponent(l.token)}`)
       .join('\n');
     discordContent = `Balance paid ${record.id} ${record.email} — download tokens minted${listed ? `\n${listed}` : ''}`;
+  } else if (
+    metaType === 'balance' &&
+    (record.status === 'paid_in_full' || record.status === 'delivered')
+  ) {
+    const pi = paymentIntentId(session.payment_intent);
+    if (!pi) return json({ error: 'Missing payment_intent' }, 400);
+    if (!env.STRIPE_SECRET_KEY) return json({ error: 'Stripe is not configured' }, 500);
+    try {
+      await stripeForm(
+        env.STRIPE_SECRET_KEY,
+        'refunds',
+        {
+          payment_intent: pi,
+          'metadata[caseId]': record.id,
+          'metadata[reason]': 'duplicate_balance_checkout',
+        },
+        { 'Idempotency-Key': `dup-balance:${event.id}` },
+      );
+    } catch (err) {
+      console.error('Duplicate balance refund failed', err);
+      return json({ error: 'Duplicate refund failed' }, 500);
+    }
+    discordContent = `ALERT duplicate balance payment ${record.id} ${record.email} — refunded ${pi} in full`;
   }
 
   await env.CASES.put(ek, '1', { expirationTtl: STRIPE_EVENT_TTL_SEC });
