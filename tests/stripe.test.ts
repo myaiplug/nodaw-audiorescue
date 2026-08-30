@@ -7,7 +7,7 @@ import {
   stripeEventKey,
   verifyStripeSignature,
 } from '../functions/lib/stripe';
-import { validateDepositInput } from '../functions/api/checkout/deposit';
+import { onRequestPost as onDepositPost, validateDepositInput } from '../functions/api/checkout/deposit';
 import { processStripeWebhook } from '../functions/api/webhooks/stripe';
 import { caseKey, getCase, putCase, type CaseRecord } from '../functions/lib/cases';
 import { tokenKey } from '../functions/lib/tokens';
@@ -104,6 +104,56 @@ describe('stripeForm', () => {
   });
 });
 
+describe('POST /api/checkout/deposit errors', () => {
+  it('returns a generic 502 and does not proxy Stripe’s body', async () => {
+    const orig = globalThis.fetch;
+    const origErr = console.error;
+    const logs: unknown[][] = [];
+    console.error = (...args: unknown[]) => {
+      logs.push(args);
+    };
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Invalid API Key provided: sk_test_leaked_secret_xyz',
+            type: 'invalid_request_error',
+          },
+        }),
+        { status: 401 },
+      )) as typeof fetch;
+    try {
+      const kv = memoryKv();
+      const res = await onDepositPost({
+        request: new Request('http://localhost/api/checkout/deposit', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: 'Ada',
+            email: 'ada@example.com',
+            notes: 'n',
+            service: 'Rush vocal cleanup',
+          }),
+        }),
+        env: {
+          CASES: kv as unknown as KVNamespace,
+          STRIPE_SECRET_KEY: 'sk_test_leaked_secret_xyz',
+          PUBLIC_BASE_URL: 'http://localhost:8788',
+        } as import('../functions/lib/env').Env,
+      });
+      expect(res.status).toBe(502);
+      const text = await res.text();
+      expect(text).not.toContain('sk_test');
+      expect(text).not.toContain('leaked_secret');
+      expect(JSON.parse(text)).toEqual({ error: 'Checkout failed' });
+      expect(logs.length).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = orig;
+      console.error = origErr;
+    }
+  });
+});
+
 describe('verifyStripeSignature', () => {
   const payload = '{"id":"evt_1","type":"checkout.session.completed"}';
   const t = 1_700_000_000;
@@ -165,7 +215,7 @@ describe('processStripeWebhook deposit', () => {
     const orig = globalThis.fetch;
     globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
       discord.push(String(init?.body ?? ''));
-      return new Response('ok', { status: 204 });
+      return new Response(null, { status: 204 });
     }) as typeof fetch;
 
     try {
@@ -177,13 +227,21 @@ describe('processStripeWebhook deposit', () => {
         PUBLIC_BASE_URL: 'http://localhost:8788',
       };
 
-      const first = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+      const pending: Promise<unknown>[] = [];
+      const first = await processStripeWebhook(
+        payload,
+        sign(payload, secret, now),
+        env,
+        now,
+        (p) => pending.push(p),
+      );
       expect(first.status).toBe(200);
+      expect(await kv.get(stripeEventKey(eventId))).toBe('1');
+      await Promise.all(pending);
 
       const rec = await getCase(env.CASES, caseId);
       expect(rec?.status).toBe('deposited');
       expect(rec?.stripeDepositPi).toBe('pi_deposit_1');
-      expect(await kv.get(stripeEventKey(eventId))).toBe('1');
 
       const tokEntries = [...kv.data.entries()].filter(([k]) =>
         k.startsWith(tokenKey('upload', '')),
@@ -215,5 +273,31 @@ describe('processStripeWebhook deposit', () => {
     expect(res.status).toBe(200);
     expect((await getCase(env.CASES, caseId))?.status).toBe('draft');
     expect(await kv.get(caseKey(caseId))).toBeTruthy();
+  });
+
+  it('writes event:{id} before Discord so a hung notify cannot remint', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, draftCase());
+    const orig = globalThis.fetch;
+    globalThis.fetch = (() => new Promise(() => {})) as typeof fetch;
+    try {
+      const payload = depositEvent();
+      const env = {
+        CASES: kv as unknown as KVNamespace,
+        STRIPE_WEBHOOK_SECRET: secret,
+        DISCORD_WEBHOOK_URL: 'https://discord.example/webhook',
+        PUBLIC_BASE_URL: 'http://localhost:8788',
+      };
+      const first = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+      expect(first.status).toBe(200);
+      expect(await kv.get(stripeEventKey(eventId))).toBe('1');
+      expect([...kv.data.keys()].filter((k) => k.startsWith('tok:upload:'))).toHaveLength(1);
+
+      const second = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+      expect(second.status).toBe(200);
+      expect([...kv.data.keys()].filter((k) => k.startsWith('tok:upload:'))).toHaveLength(1);
+    } finally {
+      globalThis.fetch = orig;
+    }
   });
 });

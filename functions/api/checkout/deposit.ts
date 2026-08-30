@@ -90,7 +90,7 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
     if (!session.url) throw new Error('Stripe session missing url');
     return json({ url: session.url, caseId: id });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Stripe error';
-    return json({ error: message }, 502);
+    console.error('Stripe checkout failed', err);
+    return json({ error: 'Checkout failed' }, 502);
   }
 }

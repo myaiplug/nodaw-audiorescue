@@ -36,6 +36,7 @@ export async function processStripeWebhook(
   signatureHeader: string | null,
   env: WebhookEnv,
   nowSec = Math.floor(Date.now() / 1000),
+  waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<Response> {
   const verified = await verifyStripeSignature(
     rawBody,
@@ -78,33 +79,44 @@ export async function processStripeWebhook(
   const record = await getCase(env.CASES, caseId);
   if (!record) return json({ error: 'Unknown case' }, 400);
 
+  let discordContent: string | null = null;
   if (record.status === 'draft') {
     record.status = 'deposited';
     record.stripeDepositPi = paymentIntentId(session.payment_intent);
     const token = await mintToken(env.CASES, 'upload', record.id, UPLOAD_TOKEN_TTL_SEC);
     await putCase(env.CASES, record);
-
     const base = (env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     const uploadUrl = `${base}/upload.html?case=${encodeURIComponent(record.id)}&token=${encodeURIComponent(token)}`;
-    try {
-      await notifyDiscord(
-        env.DISCORD_WEBHOOK_URL,
-        `New deposit ${record.id} ${record.email} — upload token minted\n${uploadUrl}`,
-      );
-    } catch {
-      // Ops notify is best-effort; Stripe should not retry because Discord failed.
-    }
+    discordContent = `New deposit ${record.id} ${record.email} — upload token minted\n${uploadUrl}`;
   }
 
   await env.CASES.put(ek, '1', { expirationTtl: STRIPE_EVENT_TTL_SEC });
+
+  if (discordContent) {
+    const notify = notifyDiscord(env.DISCORD_WEBHOOK_URL, discordContent).catch((err) => {
+      console.error('Discord notify failed', err);
+    });
+    if (waitUntil) waitUntil(notify);
+  }
+
   return json({ received: true });
 }
 
-export async function onRequestPost(context: { request: Request; env: Env }): Promise<Response> {
-  const { request, env } = context;
+export async function onRequestPost(context: {
+  request: Request;
+  env: Env;
+  waitUntil: (promise: Promise<unknown>) => void;
+}): Promise<Response> {
+  const { request, env, waitUntil } = context;
   if (!env.STRIPE_WEBHOOK_SECRET) {
     return json({ error: 'STRIPE_WEBHOOK_SECRET is not configured' }, 500);
   }
   const rawBody = await request.text();
-  return processStripeWebhook(rawBody, request.headers.get('stripe-signature'), env);
+  return processStripeWebhook(
+    rawBody,
+    request.headers.get('stripe-signature'),
+    env,
+    Math.floor(Date.now() / 1000),
+    waitUntil,
+  );
 }
