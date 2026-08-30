@@ -114,18 +114,35 @@ export async function processUpload(
     await env.AUDIO.put(r2Key, bytes, {
       httpMetadata: { contentType: contentTypeFor(header.format) },
     });
-    record.status = 'uploaded';
-    record.r2Key = r2Key;
-    await putCase(env.CASES, record);
-    await consumeToken(env.CASES, 'upload', token);
   } catch (err) {
+    console.error('Upload R2 put failed', err);
+    return json({ error: 'Upload failed' }, 500);
+  }
+
+  const previousStatus = record.status;
+  const previousR2Key = record.r2Key;
+  record.status = 'uploaded';
+  record.r2Key = r2Key;
+  try {
+    await putCase(env.CASES, record);
+  } catch (err) {
+    record.status = previousStatus;
+    record.r2Key = previousR2Key;
     try {
       await env.AUDIO.delete(r2Key);
     } catch {
       /* ignore partial cleanup errors */
     }
-    console.error('Upload commit failed', err);
+    console.error('Upload case commit failed', err);
     return json({ error: 'Upload failed' }, 500);
+  }
+
+  try {
+    await consumeToken(env.CASES, 'upload', token);
+  } catch (err) {
+    // Case is already uploaded with an R2 object; an orphan token is better than
+    // deleting the file and 409-ing retries.
+    console.error('Upload token consume failed', err);
   }
 
   const discordContent = `File uploaded ${record.id} ${record.email} — ${r2Key}`;

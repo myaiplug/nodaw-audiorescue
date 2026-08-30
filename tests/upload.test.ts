@@ -310,4 +310,64 @@ describe('POST /api/upload', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'durationSec is required' });
   });
+
+  it('deletes R2 and leaves deposited if case write fails after AUDIO.put', async function () {
+    const { kv, r2, token } = await setup();
+    const origPut = kv.put.bind(kv);
+    kv.put = async (key: string, value: string, opts?: { expirationTtl?: number }) => {
+      if (key.startsWith('case:')) throw new Error('case put failed');
+      return origPut(key, value, opts);
+    };
+    const origErr = console.error;
+    console.error = () => {};
+    try {
+      const res = await postUpload({
+        kv,
+        r2,
+        token,
+        file: fileFrom(wavHeader(), 'mix.wav', 'audio/wav'),
+      });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Upload failed' });
+      const rec = await getCase(kv as unknown as KVNamespace, caseId);
+      expect(rec?.status).toBe('deposited');
+      expect(rec?.r2Key).toBeUndefined();
+      expect(r2.objects.size).toBe(0);
+      expect(await kv.get(tokenKey('upload', token))).toBe(caseId);
+    } finally {
+      console.error = origErr;
+    }
+  });
+
+  it('returns 200 if consumeToken fails after the case is uploaded', async function () {
+    const { kv, r2, token } = await setup();
+    const origDelete = kv.delete.bind(kv);
+    kv.delete = async (key: string) => {
+      if (key.startsWith('tok:')) throw new Error('consume failed');
+      return origDelete(key);
+    };
+    const origErr = console.error;
+    console.error = () => {};
+    try {
+      const res = await postUpload({
+        kv,
+        r2,
+        token,
+        file: fileFrom(wavHeader(), 'mix.wav', 'audio/wav'),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        ok: true,
+        caseId,
+        r2Key: `cases/${caseId}/source.wav`,
+      });
+      const rec = await getCase(kv as unknown as KVNamespace, caseId);
+      expect(rec?.status).toBe('uploaded');
+      expect(rec?.r2Key).toBe(`cases/${caseId}/source.wav`);
+      expect(r2.objects.has(`cases/${caseId}/source.wav`)).toBe(true);
+      expect(await kv.get(tokenKey('upload', token))).toBe(caseId);
+    } finally {
+      console.error = origErr;
+    }
+  });
 });
