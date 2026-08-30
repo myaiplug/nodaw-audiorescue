@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Free CoProducer analysis. MP3 or WAV, five minutes max. The file never leaves this browser.">
+  <meta name="robots" content="index, follow">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="data:,">
+  <title>NO/DAW MIX RESCUE // COPRODUCER</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root{--paper:#e7e2d8;--ink:#0b0c0c;--acid:#d8ff35;--orange:#ff5c1b;--steel:#9ca2a0;--line:rgba(231,226,216,.22);--dim:#a2a49f}
+    *{box-sizing:border-box}html{background:var(--ink);color:var(--paper)}
+    body{margin:0;font-family:"Space Grotesk",Arial,sans-serif;background:radial-gradient(circle at 70% 4%,#31312b 0,transparent 33rem),var(--ink);min-height:100vh}
+    body:before{content:"";pointer-events:none;position:fixed;inset:0;z-index:20;opacity:.10;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");mix-blend-mode:screen}
+    .shell{width:min(1040px,calc(100% - 36px));margin:auto;position:relative;z-index:1}
+    .topline{border-bottom:1px solid var(--line);font:500 10px/1 "DM Mono",monospace;letter-spacing:.12em;padding:10px 0;color:var(--dim);display:flex;justify-content:space-between;text-transform:uppercase}
+    .nav{height:80px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+    .mark{font-weight:700;font-size:19px;letter-spacing:-.08em;line-height:.78}
+    .mark i{font-style:normal;color:var(--acid)}
+    .division{font:500 10px "DM Mono",monospace;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;text-align:right}
+    .kicker{font:500 10px "DM Mono",monospace;letter-spacing:.18em;color:var(--orange);text-transform:uppercase;margin:36px 0 14px}
+    h1{font-size:clamp(36px,7vw,56px);line-height:.92;letter-spacing:-.04em;margin:0 0 14px;font-weight:600}
+    h1 span{color:var(--acid)}
+    .lede{color:var(--steel);font-size:16px;line-height:1.55;margin:0 0 28px;max-width:52ch}
+    .drop{border:1px dashed var(--line);padding:42px 22px;text-align:center;cursor:pointer;transition:border-color .18s ease,background .18s ease;position:relative}
+    .drop:hover,.drop.hot{border-color:var(--acid);background:#16180c}
+    .drop.busy{opacity:.55;pointer-events:none}
+    .drop h2{margin:0 0 8px;font-size:22px;letter-spacing:-.03em}
+    .drop p{margin:0;color:var(--steel);font-size:13px;line-height:1.5}
+    .drop input{position:absolute;opacity:0;width:0;height:0}
+    .rules{margin:16px 0 0;font:400 10px "DM Mono",monospace;letter-spacing:.08em;color:var(--dim);line-height:1.7;text-transform:uppercase}
+    .error{display:none;color:#ff7a52;font:500 11px "DM Mono",monospace;letter-spacing:.04em;margin:18px 0 0;padding:10px 12px;border:1px solid #ff5c1b44;background:#2a0e06}
+    .error.show{display:block}
+    .status{font:500 11px "DM Mono",monospace;letter-spacing:.06em;color:var(--dim);margin:16px 0 0;min-height:1.2em}
+    .fine{font:400 10px "DM Mono",monospace;line-height:1.7;letter-spacing:.06em;color:var(--dim);border-top:1px solid var(--line);padding:26px 0 60px;text-align:center;margin-top:48px}
+    a{color:var(--acid)}
+    .button{border:1px solid var(--acid);background:var(--acid);color:var(--ink);border-radius:0;font:700 12px "Space Grotesk",sans-serif;padding:13px 16px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;transition:transform .18s ease,background .18s ease}
+    .button:hover{transform:translate(-3px,-3px);box-shadow:4px 4px 0 var(--orange)}
+    .mono{font-family:"DM Mono",monospace}
+    .report{border-top:1px solid var(--line);margin-top:36px;padding-top:8px}
+    .view-toggle{display:flex;gap:0;margin:8px 0 6px;width:fit-content;border:1px solid var(--line)}
+    .view-toggle button{border:0;border-right:1px solid var(--line);background:transparent;color:var(--dim);font:700 11px "DM Mono",monospace;letter-spacing:.14em;padding:12px 16px;text-transform:uppercase;cursor:pointer}
+    .view-toggle button:last-child{border-right:0}
+    .view-toggle button.on{color:var(--ink);background:var(--acid)}
+    .file-line{font:500 11px "DM Mono",monospace;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin:0 0 12px}
+    .editorial{font-size:clamp(32px,5vw,54px);line-height:.95;letter-spacing:-.035em;margin:0 0 14px;font-weight:600}
+    .score-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:22px;margin:8px 0 22px}
+    .score-block .k{font:500 10px "DM Mono",monospace;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:6px}
+    .score{font-size:clamp(64px,10vw,96px);line-height:.8;font-weight:600;letter-spacing:-.05em}
+    .score.good,.v.good,.verdict-chip.good,.verdict-line.good{color:var(--acid)}
+    .score.mid,.v.mid,.verdict-chip.mid,.verdict-line.mid{color:var(--paper)}
+    .score.bad,.v.bad,.verdict-chip.bad,.verdict-line.bad{color:#ff7a52}
+    .verdict-chip{display:inline-flex;align-items:center;border:1px solid var(--line);padding:12px 16px;font:500 13px "Space Grotesk",sans-serif;max-width:36ch;line-height:1.35}
+    .verdict-chip.good{border-color:#d8ff3566;background:#20270a}
+    .verdict-chip.bad{border-color:#ff5c1b66;background:#2a0e06}
+    .verdict-line{font-size:18px;line-height:1.4;color:var(--steel);margin:0 0 22px}
+    .score-inline{font:700 18px "DM Mono",monospace;color:inherit;margin-left:8px}
+    .meter-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 28px}
+    .meter-grid.appendix{margin-top:8px}
+    .meter-cell{border:1px solid var(--line);padding:12px 14px;min-width:0}
+    .meter-cell .k{font:500 9px "DM Mono",monospace;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:6px}
+    .meter-cell .v{font:700 15px "DM Mono",monospace;color:var(--paper);word-break:break-word}
+    .section-label{font:500 10px "DM Mono",monospace;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin:8px 0 12px}
+    .findings,.checks{list-style:none;margin:0 0 24px;padding:0}
+    .finding,.check{display:flex;gap:14px;border:1px solid var(--line);padding:16px 18px;margin-bottom:10px}
+    .finding b,.check b{display:block;font-size:16px;letter-spacing:-.02em;margin:0 0 6px}
+    .finding p,.check p{margin:0;color:var(--steel);font-size:13px;line-height:1.55}
+    .sev{font:700 9px "DM Mono",monospace;letter-spacing:.14em;text-transform:uppercase;min-width:72px;padding-top:4px}
+    .finding.critical .sev,.check.critical b{color:#ff7a52}
+    .finding.warn .sev,.check.warn b{color:var(--orange)}
+    .finding.info .sev,.check.info b{color:var(--acid)}
+    .check .box{width:14px;height:14px;border:1px solid var(--line);flex:none;margin-top:4px}
+    .check.critical .box{border-color:#ff5c1b;background:#2a0e06}
+    .check.warn .box{border-color:var(--orange)}
+    .wave-host{border:1px solid var(--line);background:#0a0b0b;height:140px;margin:0 0 28px;overflow:hidden}
+    .wave-host canvas{display:block;width:100%;height:100%}
+    .next{color:var(--paper);font-size:16px;line-height:1.5;margin:0 0 16px;max-width:52ch}
+    .est-note{font:400 9px "DM Mono",monospace;letter-spacing:.08em;color:var(--dim);line-height:1.7;margin:18px 0 0;max-width:72ch;text-transform:uppercase}
+    @media(max-width:720px){.meter-grid{grid-template-columns:repeat(2,1fr)}.topline .right{display:none}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topline"><span>NO/DAW // AUDIO RESCUE DIVISION</span><span class="right">LOCAL ONLY · NO UPLOAD</span></div>
+    <nav class="nav">
+      <div class="mark">NO<i>/</i>DAW<br>LABS</div>
+      <div class="division">COPRODUCER // FREE<br>FILE STAYS HERE</div>
+    </nav>
+    <p class="kicker">Free CoProducer analysis</p>
+    <h1>Drop the mix.<br>Get a <span>verdict.</span></h1>
+    <p class="lede">MP3 or WAV. Five minutes. No card. The file is decoded in this browser and never sent to the lab. Two views: Dossier or Full studio.</p>
+    <div id="picker">
+      <label class="drop" id="drop" for="file">
+        <input id="file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav">
+        <h2>Drop the mix</h2>
+        <p>Click or drop a single MP3 or WAV.<br>We measure peak, clips, crest, stereo, and band energy on-device.</p>
+      </label>
+      <p class="rules">No stems · no M4A · no Drive links · nothing leaves this tab</p>
+    </div>
+    <div class="error" id="error" role="alert"></div>
+    <p class="status" id="status"></p>
+    <div id="report"></div>
+    <footer class="fine">NODAW LABS // MIX RESCUE · EST. LUFS IS A MEAN-SQUARE ESTIMATE · <a href="/">BACK TO THE FLOOR</a></footer>
+  </div>
+  <script type="module">
+    import { analyzeFile } from './js/analyze.js';
+    import { renderReport, readStoredView } from './js/report.js';
+
+    const $ = (id) => document.getElementById(id);
+    const drop = $('drop');
+    const fileInput = $('file');
+    const errorEl = $('error');
+    const statusEl = $('status');
+    const reportEl = $('report');
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.classList.add('show');
+    }
+    function clearError() {
+      errorEl.classList.remove('show');
+      errorEl.textContent = '';
+    }
+
+    drop.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      drop.classList.add('hot');
+    });
+    drop.addEventListener('dragleave', () => drop.classList.remove('hot'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('hot');
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) void handleFile(file);
+    });
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (file) void handleFile(file);
+      fileInput.value = '';
+    });
+
+    async function handleFile(file) {
+      clearError();
+      reportEl.innerHTML = '';
+      drop.classList.add('busy');
+      statusEl.textContent = 'Reading ' + file.name + '…';
+      try {
+        await new Promise((r) => setTimeout(r, 0));
+        statusEl.textContent = 'Decoding + measuring — file stays local…';
+        const result = await analyzeFile(file);
+        statusEl.textContent = 'Local only · ' + file.name;
+        renderReport(reportEl, result, readStoredView());
+        reportEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (err) {
+        showError(err && err.message ? err.message : 'Could not analyze that file.');
+        statusEl.textContent = '';
+      } finally {
+        drop.classList.remove('busy');
+      }
+    }
+  </script>
+</body>
+</html>

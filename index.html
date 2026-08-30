@@ -28,7 +28,7 @@
     <div class="topline"><span>NO/DAW // AUDIO RESCUE DIVISION</span><span class="right">LOUISVILLE, KY <b>•</b> SAME-NIGHT QUEUE <span id="queue-status" class="status-chip">OPEN</span></span></div>
     <nav class="nav"><div class="mark">NO<i>/</i>DAW<br>LABS</div><div class="division">CASE FILE // 002<br>MIX RESCUE</div><button class="nav-button" data-open-order>Get in the queue ↗</button></nav>
     <section class="hero">
-      <div class="hero-grid"><div><p class="kicker">For records stuck at 92%</p><h1 class="display">The song<br>is done.<br><span class="stroke">The mix</span><br><span class="acid">ain't.</span></h1><p class="hero-copy">Your car speakers caught it. The hook is buried, the vocal is harsh, or the whole damn song feels smaller than it should. <b>Send the file. Get a real answer and a real rescue pass tonight.</b></p><div class="hero-actions"><button class="button" data-open-order>Claim a $39 rush slot ↗</button><a class="button ghost" href="#hear">Hear a rescue ↓</a></div><div class="wave-panel"><div class="wave" id="wave"></div></div></div><aside class="meter"><h2>TONIGHT'S LAB RUN</h2><p class="price">$39 <small>/ ONE SONG</small></p><p class="meter-detail"><strong>Five slots. That's it.</strong>Same-night delivery if your file lands before 9 PM. No fake "industry" promises. No filler. No mystery upsells.</p></aside></div>
+      <div class="hero-grid"><div><p class="kicker">For records stuck at 92%</p><h1 class="display">The song<br>is done.<br><span class="stroke">The mix</span><br><span class="acid">ain't.</span></h1><p class="hero-copy">Your car speakers caught it. The hook is buried, the vocal is harsh, or the whole damn song feels smaller than it should. <b>Send the file. Get a real answer and a real rescue pass tonight.</b></p><div class="hero-actions"><a class="button ghost" href="./analyze.html">Free CoProducer analysis ↗</a><button class="button" data-open-order>Claim a $39 rush slot ↗</button></div><div class="wave-panel"><div class="wave" id="wave"></div></div></div><aside class="meter"><h2>TONIGHT'S LAB RUN</h2><p class="price">$39 <small>/ ONE SONG</small></p><p class="meter-detail"><strong>Five slots. That's it.</strong>Same-night delivery if your file lands before 9 PM. No fake "industry" promises. No filler. No mystery upsells.</p></aside></div>
     </section>
   </div>
   <div class="ticker"><div class="move">VOCAL TOO SHARP <b>///</b> HOOK LOST IN THE BEAT <b>///</b> MIX DIES IN THE CAR <b>///</b> YOUR FILE DESERVES A SECOND LOOK <b>///</b> VOCAL TOO SHARP <b>///</b> HOOK LOST IN THE BEAT <b>///</b> MIX DIES IN THE CAR <b>///</b></div></div>
@@ -82,6 +82,7 @@
     document.querySelectorAll('[data-open-order]').forEach(el=>el.addEventListener('click',open));
     document.querySelector('[data-close-order]').addEventListener('click',close);
     modal.addEventListener('click',e=>{if(e.target===modal)close()});document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+    try{ if(new URLSearchParams(location.search).get('open')==='deposit') open(); }catch(_){}
 
     // ======================== DECORATIVE EQ BARS (hero) ========================
     const wave=$('wave');for(let i=0;i<94;i++){const b=document.createElement('span');b.style.height=`${14+Math.abs(Math.sin(i*.55))*76}%`;b.style.animationDelay=`${(i%13)*-.13}s`;wave.appendChild(b)}
