@@ -1,4 +1,7 @@
 export const DEPOSIT_AMOUNT_CENTS = 1950;
+export const BALANCE_AMOUNT_CENTS = 1950;
+export const DECLINE_REFUND_CENTS = 1450;
+export const DECLINE_KEEP_CENTS = 500;
 export const STRIPE_SIGNATURE_TOLERANCE_SEC = 300;
 export const STRIPE_EVENT_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
 
@@ -38,6 +41,51 @@ export function depositCheckoutFields(opts: {
     'metadata[type]': 'deposit',
     'metadata[caseId]': opts.caseId,
   };
+}
+
+export function balanceCheckoutFields(opts: {
+  caseId: string;
+  email: string;
+  publicBaseUrl: string;
+  productName?: string;
+}): Record<string, string> {
+  const base = opts.publicBaseUrl.replace(/\/+$/, '');
+  return {
+    mode: 'payment',
+    customer_email: opts.email,
+    success_url: `${base}/thanks.html?case=${encodeURIComponent(opts.caseId)}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${base}/`,
+    'line_items[0][quantity]': '1',
+    'line_items[0][price_data][currency]': 'usd',
+    'line_items[0][price_data][unit_amount]': String(BALANCE_AMOUNT_CENTS),
+    'line_items[0][price_data][product_data][name]': opts.productName ?? 'Mix Rescue balance',
+    'metadata[type]': 'balance',
+    'metadata[caseId]': opts.caseId,
+  };
+}
+
+export function declineRefundFields(opts: {
+  paymentIntentId: string;
+  caseId: string;
+}): Record<string, string> {
+  return {
+    payment_intent: opts.paymentIntentId,
+    amount: String(DECLINE_REFUND_CENTS),
+    reason: 'requested_by_customer',
+    'metadata[caseId]': opts.caseId,
+    'metadata[reason]': 'not_a_fit_review_fee_kept',
+  };
+}
+
+export async function createBalanceCheckout(
+  secret: string,
+  opts: { caseId: string; email: string; publicBaseUrl: string },
+): Promise<{ url: string }> {
+  const session = (await stripeForm(secret, 'checkout/sessions', balanceCheckoutFields(opts))) as {
+    url?: string;
+  };
+  if (!session.url) throw new Error('Stripe session missing url');
+  return { url: session.url };
 }
 
 export function parseStripeSignature(header: string): { t: number; v1: string[] } | null {

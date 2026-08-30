@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="NoDAW Mix Rescue ops desk.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="data:,">
+  <title>NO/DAW MIX RESCUE // OPS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root{--paper:#e7e2d8;--ink:#0b0c0c;--acid:#d8ff35;--orange:#ff5c1b;--steel:#9ca2a0;--line:rgba(231,226,216,.22);--dim:#a2a49f}
+    *{box-sizing:border-box}html{background:var(--ink);color:var(--paper)}
+    body{margin:0;font-family:"Space Grotesk",Arial,sans-serif;background:radial-gradient(circle at 70% 4%,#31312b 0,transparent 33rem),var(--ink);min-height:100vh}
+    body:before{content:"";pointer-events:none;position:fixed;inset:0;z-index:20;opacity:.10;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");mix-blend-mode:screen}
+    .shell{width:min(960px,calc(100% - 36px));margin:auto;position:relative;z-index:1}
+    .topline{border-bottom:1px solid var(--line);font:500 10px/1 "DM Mono",monospace;letter-spacing:.12em;padding:10px 0;color:var(--dim);display:flex;justify-content:space-between;text-transform:uppercase}
+    .nav{height:80px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+    .mark{font-weight:700;font-size:19px;letter-spacing:-.08em;line-height:.78}
+    .mark i{font-style:normal;color:var(--acid)}
+    .division{font:500 10px "DM Mono",monospace;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;text-align:right}
+    .kicker{font:500 10px "DM Mono",monospace;letter-spacing:.18em;color:var(--orange);text-transform:uppercase;margin:36px 0 14px}
+    h1{font-size:clamp(32px,6vw,48px);line-height:.92;letter-spacing:-.04em;margin:0 0 14px;font-weight:600}
+    h1 span{color:var(--acid)}
+    .lede{color:var(--steel);font-size:15px;line-height:1.55;margin:0 0 24px;max-width:52ch}
+    .field{margin-bottom:14px}
+    .field label{display:block;font:500 9px "DM Mono",monospace;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin-bottom:7px}
+    .field input,.field textarea{width:100%;background:#050606;border:1px solid var(--line);color:var(--paper);padding:12px;font:400 14px "Space Grotesk",sans-serif}
+    .field input:focus,.field textarea:focus{outline:none;border-color:var(--acid)}
+    .button{border:1px solid var(--acid);background:var(--acid);color:var(--ink);font:700 12px "Space Grotesk",sans-serif;padding:12px 16px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer}
+    .button.ghost{background:transparent;color:var(--paper);border-color:var(--line)}
+    .button.danger{background:transparent;color:#ff7a52;border-color:#ff5c1b66}
+    .button:disabled{opacity:.55;pointer-events:none}
+    .error{display:none;color:#ff7a52;font:500 11px "DM Mono",monospace;margin:0 0 14px;padding:10px 12px;border:1px solid #ff5c1b44;background:#2a0e06}
+    .error.show{display:block}
+    .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+    .case{border:1px solid var(--line);padding:18px;margin:0 0 14px}
+    .case h2{margin:0 0 8px;font-size:18px;letter-spacing:-.02em}
+    .meta{font:400 11px "DM Mono",monospace;color:var(--dim);letter-spacing:.04em;line-height:1.7}
+    .meta b{color:var(--paper);font-weight:500}
+    .st{display:inline-block;border:1px solid var(--line);padding:3px 8px;font:500 9px "DM Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--acid)}
+    .files{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+    .fine{font:400 10px "DM Mono",monospace;line-height:1.7;letter-spacing:.06em;color:var(--dim);border-top:1px solid var(--line);padding:26px 0 60px;text-align:center;margin-top:48px}
+    a{color:var(--acid)}
+    @media(max-width:720px){.files{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topline"><span>NO/DAW // AUDIO RESCUE DIVISION</span><span>OPS DESK</span></div>
+    <nav class="nav">
+      <div class="mark">NO<i>/</i>DAW<br>LABS</div>
+      <div class="division">CASE FILE // OPS<br>DECLINE · RESCUE · $19.50</div>
+    </nav>
+    <p class="kicker">Password gate · Stripe refund $14.50 · keep $5</p>
+    <h1>Lab <span>queue.</span></h1>
+    <p class="lede">List open cases, hear the source, decline with a $14.50 refund, or drop rescue files and send the $19.50 balance Checkout.</p>
+
+    <div class="error" id="error" role="alert"></div>
+
+    <form id="login">
+      <div class="field">
+        <label for="password">Ops password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="button" type="submit">Enter desk</button>
+    </form>
+
+    <div id="desk" hidden>
+      <div class="row">
+        <button class="button ghost" type="button" id="refresh">Refresh list</button>
+        <button class="button ghost" type="button" id="logout">Log out</button>
+      </div>
+      <div id="cases" style="margin-top:22px"></div>
+    </div>
+
+    <footer class="fine">NODAW LABS // MIX RESCUE OPS · TOTAL $39 · DEPOSIT $19.50 · BALANCE $19.50 · DECLINE KEEPS $5</footer>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const errorEl = $('error');
+    const login = $('login');
+    const desk = $('desk');
+    const casesEl = $('cases');
+    let password = sessionStorage.getItem('ops') || '';
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function showError(msg) {
+      errorEl.textContent = msg || '';
+      errorEl.classList.toggle('show', !!msg);
+    }
+
+    function headers(extra) {
+      const h = extra ? Object.assign({}, extra) : {};
+      if (password) h.Authorization = 'Bearer ' + password;
+      return h;
+    }
+
+    async function api(body, isForm) {
+      const res = await fetch('/api/ops/cases', {
+        method: 'POST',
+        credentials: 'include',
+        headers: isForm ? headers() : headers({ 'Content-Type': 'application/json' }),
+        body: isForm ? body : JSON.stringify(body),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (_) {}
+      return { res, data };
+    }
+
+    async function loadCases() {
+      showError('');
+      const { res, data } = await api({ action: 'list' });
+      if (res.status === 401) {
+        desk.hidden = true;
+        login.hidden = false;
+        showError('Password required.');
+        return;
+      }
+      if (!res.ok) {
+        showError(data.error || 'List failed.');
+        return;
+      }
+      login.hidden = true;
+      desk.hidden = false;
+      const list = data.cases || [];
+      if (!list.length) {
+        casesEl.innerHTML = '<p class="lede">No cases in KV.</p>';
+        return;
+      }
+      casesEl.innerHTML = list.map((c) => {
+        const canDecide = c.status === 'uploaded' || c.status === 'in_review' || c.status === 'invalid_file';
+        const canRescue = canDecide || c.status === 'rescued' || c.status === 'balance_due';
+        const source = c.r2Key
+          ? '<button class="button ghost" data-source="' + c.id + '" type="button">Hear source</button>'
+          : '';
+        const decline = canDecide
+          ? '<button class="button danger" data-decline="' + c.id + '" type="button">Decline · refund $14.50</button>'
+          : '';
+        const rescue = canRescue ? (
+          '<form data-rescue="' + c.id + '">' +
+            '<div class="files">' +
+              '<div class="field"><label>Rescue WAV</label><input type="file" name="wav" accept=".wav,audio/wav"></div>' +
+              '<div class="field"><label>Rescue MP3</label><input type="file" name="mp3" accept=".mp3,audio/mpeg"></div>' +
+            '</div>' +
+            '<div class="field"><label>Notes</label><textarea name="notes" rows="3" placeholder="Release-readiness notes"></textarea></div>' +
+            '<button class="button" type="submit">Mark rescued · $19.50 balance</button>' +
+          '</form>'
+        ) : '';
+        const pay = c.balanceCheckoutUrl
+          ? '<p class="meta">BALANCE <a href="' + esc(c.balanceCheckoutUrl) + '" target="_blank" rel="noopener">Checkout link</a></p>'
+          : '';
+        return '<article class="case">' +
+          '<h2>' + esc(c.name || 'Untitled') + ' <span class="st">' + esc(c.status) + '</span></h2>' +
+          '<p class="meta"><b>' + esc(c.id) + '</b><br>' + esc(c.email) + ' · ' + esc(c.service || '') + '<br>' +
+          (c.r2Key ? 'SOURCE ' + esc(c.r2Key) : 'NO SOURCE') + '</p>' +
+          pay +
+          '<div class="row">' + source + decline + '</div>' +
+          rescue +
+        '</article>';
+      }).join('');
+    }
+
+    login.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      password = $('password').value;
+      const { res, data } = await api({ action: 'login', password });
+      if (!res.ok) {
+        showError(data.error || 'Login failed.');
+        return;
+      }
+      sessionStorage.setItem('ops', password);
+      await loadCases();
+    });
+
+    $('refresh').addEventListener('click', () => loadCases());
+    $('logout').addEventListener('click', async () => {
+      await api({ action: 'logout' });
+      sessionStorage.removeItem('ops');
+      password = '';
+      desk.hidden = true;
+      login.hidden = false;
+    });
+
+    casesEl.addEventListener('click', async (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.dataset.source) {
+        const { res, data } = await api({ action: 'source_url', caseId: t.dataset.source });
+        if (!res.ok) { showError(data.error || 'Source URL failed.'); return; }
+        window.open(data.url, '_blank', 'noopener');
+      }
+      if (t.dataset.decline) {
+        if (!confirm('Refund $14.50 and keep the $5 review fee?')) return;
+        const note = prompt('Decline note (optional)') || '';
+        const { res, data } = await api({ action: 'decline', caseId: t.dataset.decline, note });
+        if (!res.ok) { showError(data.error || 'Decline failed.'); return; }
+        await loadCases();
+      }
+    });
+
+    casesEl.addEventListener('submit', async (e) => {
+      const form = e.target;
+      if (!(form instanceof HTMLFormElement) || !form.dataset.rescue) return;
+      e.preventDefault();
+      const fd = new FormData(form);
+      fd.set('action', 'mark_rescued');
+      fd.set('caseId', form.dataset.rescue);
+      const { res, data } = await api(fd, true);
+      if (!res.ok) { showError(data.error || 'Rescue failed.'); return; }
+      await loadCases();
+    });
+
+    if (password) loadCases();
+  </script>
+</body>
+</html>

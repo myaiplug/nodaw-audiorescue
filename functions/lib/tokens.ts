@@ -1,4 +1,40 @@
-export type TokenKind = 'upload';
+import { downloadAssetsFor, type CaseRecord, type DownloadLink } from './cases';
+
+export type TokenKind = 'upload' | 'download';
+
+export const DOWNLOAD_TOKEN_TTL_SEC = 60 * 60 * 72; // 72h
+
+export type DownloadTokenPayload = {
+  caseId: string;
+  r2Key: string;
+  filename: string;
+  ops?: boolean;
+};
+
+export function parseDownloadTokenPayload(raw: string | null): DownloadTokenPayload | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    if (
+      typeof o.caseId === 'string' &&
+      o.caseId &&
+      typeof o.r2Key === 'string' &&
+      o.r2Key &&
+      typeof o.filename === 'string' &&
+      o.filename
+    ) {
+      return {
+        caseId: o.caseId,
+        r2Key: o.r2Key,
+        filename: o.filename,
+        ops: o.ops === true,
+      };
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
 
 export function tokenKey(kind: TokenKind, token: string): string {
   return `tok:${kind}:${token}`;
@@ -45,6 +81,36 @@ export async function mintToken(
   const token = randomTokenHex(32);
   await kv.put(tokenKey(kind, token), caseId, { expirationTtl: ttlSec });
   return token;
+}
+
+export async function mintDownloadLinks(
+  kv: KVNamespace,
+  record: CaseRecord,
+  ttlSec = DOWNLOAD_TOKEN_TTL_SEC,
+  extra: Array<{ kind: DownloadLink['kind']; r2Key: string; filename: string; ops?: boolean }> = [],
+): Promise<DownloadLink[]> {
+  const assets = extra.length ? extra : downloadAssetsFor(record);
+  const links: DownloadLink[] = [];
+  for (const a of assets) {
+    const payload: DownloadTokenPayload = {
+      caseId: record.id,
+      r2Key: a.r2Key,
+      filename: a.filename,
+    };
+    if ('ops' in a && a.ops) payload.ops = true;
+    const token = await mintToken(kv, 'download', JSON.stringify(payload), ttlSec);
+    links.push({ kind: a.kind, filename: a.filename, token });
+  }
+  return links;
+}
+
+/** KV peek; does not delete. */
+export async function peekToken(
+  kv: KVNamespace,
+  kind: TokenKind,
+  token: string,
+): Promise<string | null> {
+  return kv.get(tokenKey(kind, token));
 }
 
 /** KV one-time consume; deletes key on success. */

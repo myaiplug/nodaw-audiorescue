@@ -1,7 +1,12 @@
 import { createHmac } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
+  BALANCE_AMOUNT_CENTS,
   DEPOSIT_AMOUNT_CENTS,
+  DECLINE_KEEP_CENTS,
+  DECLINE_REFUND_CENTS,
+  balanceCheckoutFields,
+  declineRefundFields,
   depositCheckoutFields,
   stripeForm,
   stripeEventKey,
@@ -24,6 +29,11 @@ function memoryKv() {
     },
     async delete(key: string) {
       data.delete(key);
+    },
+    async list(opts?: { prefix?: string; cursor?: string }) {
+      const prefix = opts?.prefix ?? '';
+      const keys = [...data.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name }));
+      return { keys, list_complete: true as const };
     },
   };
 }
@@ -52,6 +62,34 @@ describe('depositCheckoutFields', () => {
     expect(fields.success_url).toContain('session_id={CHECKOUT_SESSION_ID}');
     expect(fields.success_url).toContain('case=case-1');
     expect(fields.cancel_url).toBe('http://localhost:8788/');
+  });
+});
+
+describe('balanceCheckoutFields + decline refund', () => {
+  it('charges 1950 cents USD with balance metadata and thanks success url', () => {
+    const fields = balanceCheckoutFields({
+      caseId: 'case-1',
+      email: 'a@b.co',
+      publicBaseUrl: 'http://localhost:8788/',
+    });
+    expect(BALANCE_AMOUNT_CENTS).toBe(1950);
+    expect(fields['line_items[0][price_data][unit_amount]']).toBe('1950');
+    expect(fields['line_items[0][price_data][currency]']).toBe('usd');
+    expect(fields['metadata[type]']).toBe('balance');
+    expect(fields['metadata[caseId]']).toBe('case-1');
+    expect(fields.success_url).toContain('/thanks.html?case=case-1');
+    expect(fields.success_url).toContain('session_id={CHECKOUT_SESSION_ID}');
+  });
+
+  it('refunds 1450 cents and keeps 500', () => {
+    expect(DECLINE_REFUND_CENTS).toBe(1450);
+    expect(DECLINE_KEEP_CENTS).toBe(500);
+    expect(DEPOSIT_AMOUNT_CENTS - DECLINE_REFUND_CENTS).toBe(DECLINE_KEEP_CENTS);
+    const fields = declineRefundFields({ paymentIntentId: 'pi_deposit_1', caseId: 'case-1' });
+    expect(fields.amount).toBe('1450');
+    expect(fields.payment_intent).toBe('pi_deposit_1');
+    expect(fields.reason).toBe('requested_by_customer');
+    expect(fields['metadata[reason]']).toBe('not_a_fit_review_fee_kept');
   });
 });
 
@@ -296,6 +334,89 @@ describe('processStripeWebhook deposit', () => {
       const second = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
       expect(second.status).toBe(200);
       expect([...kv.data.keys()].filter((k) => k.startsWith('tok:upload:'))).toHaveLength(1);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});
+
+describe('processStripeWebhook balance', () => {
+  const caseId = '11111111-1111-4111-8111-111111111111';
+  const eventId = 'evt_balance_1';
+  const now = 1_700_000_000;
+
+  function rescuedCase(): CaseRecord {
+    return {
+      id: caseId,
+      email: 'artist@example.com',
+      name: 'Ada',
+      notes: 'sibilance',
+      service: 'Rush vocal cleanup',
+      status: 'balance_due',
+      stripeDepositPi: 'pi_deposit_1',
+      stripeBalancePi: null,
+      createdAt: '2026-08-29T00:00:00.000Z',
+      r2Key: `cases/${caseId}/source.wav`,
+      r2RescueWav: `cases/${caseId}/rescue.wav`,
+      r2Notes: `cases/${caseId}/notes.txt`,
+    };
+  }
+
+  function balanceEvent() {
+    return JSON.stringify({
+      id: eventId,
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_bal_1',
+          payment_intent: 'pi_balance_1',
+          metadata: { type: 'balance', caseId },
+        },
+      },
+    });
+  }
+
+  it('marks paid_in_full, stores PI, mints download tokens, is idempotent', async () => {
+    const kv = memoryKv();
+    await putCase(kv as unknown as KVNamespace, rescuedCase());
+    const discord: string[] = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      discord.push(String(init?.body ?? ''));
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+
+    try {
+      const payload = balanceEvent();
+      const env = {
+        CASES: kv as unknown as KVNamespace,
+        STRIPE_WEBHOOK_SECRET: secret,
+        DISCORD_WEBHOOK_URL: 'https://discord.example/webhook',
+        PUBLIC_BASE_URL: 'http://localhost:8788',
+      };
+      const pending: Promise<unknown>[] = [];
+      const first = await processStripeWebhook(
+        payload,
+        sign(payload, secret, now),
+        env,
+        now,
+        (p) => pending.push(p),
+      );
+      expect(first.status).toBe(200);
+      await Promise.all(pending);
+
+      const rec = await getCase(env.CASES, caseId);
+      expect(rec?.status).toBe('paid_in_full');
+      expect(rec?.stripeBalancePi).toBe('pi_balance_1');
+      expect(rec?.downloadLinks?.length).toBe(3);
+      const tok = [...kv.data.entries()].filter(([k]) => k.startsWith('tok:download:'));
+      expect(tok).toHaveLength(3);
+      expect(discord.join('')).toContain(`Balance paid ${caseId} artist@example.com`);
+      expect(discord.join('')).toContain('/api/download?token=');
+
+      const second = await processStripeWebhook(payload, sign(payload, secret, now), env, now);
+      expect(second.status).toBe(200);
+      expect([...kv.data.keys()].filter((k) => k.startsWith('tok:download:'))).toHaveLength(3);
     } finally {
       globalThis.fetch = orig;
     }

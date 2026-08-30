@@ -6,7 +6,7 @@ import {
   stripeEventKey,
   verifyStripeSignature,
 } from '../../lib/stripe';
-import { mintToken } from '../../lib/tokens';
+import { DOWNLOAD_TOKEN_TTL_SEC, mintDownloadLinks, mintToken } from '../../lib/tokens';
 
 const UPLOAD_TOKEN_TTL_SEC = 60 * 60;
 
@@ -64,7 +64,8 @@ export async function processStripeWebhook(
 
   const session = event.data?.object ?? {};
   const metadata = (session.metadata ?? {}) as Record<string, unknown>;
-  if (metadata.type !== 'deposit') {
+  const metaType = metadata.type;
+  if (metaType !== 'deposit' && metaType !== 'balance') {
     return json({ received: true });
   }
 
@@ -80,7 +81,7 @@ export async function processStripeWebhook(
   if (!record) return json({ error: 'Unknown case' }, 400);
 
   let discordContent: string | null = null;
-  if (record.status === 'draft') {
+  if (metaType === 'deposit' && record.status === 'draft') {
     record.status = 'deposited';
     record.stripeDepositPi = paymentIntentId(session.payment_intent);
     const token = await mintToken(env.CASES, 'upload', record.id, UPLOAD_TOKEN_TTL_SEC);
@@ -88,6 +89,20 @@ export async function processStripeWebhook(
     const base = (env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     const uploadUrl = `${base}/upload.html?case=${encodeURIComponent(record.id)}&token=${encodeURIComponent(token)}`;
     discordContent = `New deposit ${record.id} ${record.email} — upload token minted\n${uploadUrl}`;
+  } else if (
+    metaType === 'balance' &&
+    (record.status === 'rescued' || record.status === 'balance_due')
+  ) {
+    record.status = 'paid_in_full';
+    record.stripeBalancePi = paymentIntentId(session.payment_intent);
+    const links = await mintDownloadLinks(env.CASES, record, DOWNLOAD_TOKEN_TTL_SEC);
+    record.downloadLinks = links;
+    await putCase(env.CASES, record);
+    const base = (env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+    const listed = links
+      .map((l) => `${l.filename} ${base}/api/download?token=${encodeURIComponent(l.token)}`)
+      .join('\n');
+    discordContent = `Balance paid ${record.id} ${record.email} — download tokens minted${listed ? `\n${listed}` : ''}`;
   }
 
   await env.CASES.put(ek, '1', { expirationTtl: STRIPE_EVENT_TTL_SEC });
