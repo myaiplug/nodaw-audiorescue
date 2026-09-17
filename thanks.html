@@ -117,10 +117,14 @@
           statusEl.textContent = 'Paid, but no files are attached yet. Ping ops.';
           return;
         }
-        linksEl.innerHTML = list.map((l) => {
-          const label = (l.kind || 'file').toUpperCase() + ' · ' + (l.filename || 'download');
-          return '<a href="' + l.url + '">' + label + '</a>';
-        }).join('');
+        linksEl.replaceChildren();
+        for (const l of list) {
+          const a = document.createElement('a');
+          a.href = typeof l.url === 'string' ? l.url : '#';
+          a.rel = 'noopener';
+          a.textContent = String(l.kind || 'file').toUpperCase() + ' · ' + String(l.filename || 'download');
+          linksEl.appendChild(a);
+        }
         statusEl.textContent = '';
       } catch (err) {
         showError(err && err.message ? err.message : 'Network error.');

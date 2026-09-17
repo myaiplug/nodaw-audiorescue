@@ -1,18 +1,16 @@
 {
-  "name": "audiorescue-production",
+  "name": "nodaw-audiorescue",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
+  "description": "NoDAW Mix Rescue — Cloudflare Pages + Stripe deposit/balance + CoProducer free analysis",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "wrangler pages dev . --compatibility-date=2026-08-01",
+    "deploy": "npm test && wrangler pages deploy . --project-name nodaw-audiorescue"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "license": "UNLICENSED",
+  "type": "module",
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260829.1",
     "typescript": "^7.0.2",

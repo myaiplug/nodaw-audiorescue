@@ -51,6 +51,15 @@ export function validateAudioHeaders(buf: ArrayBuffer, filename: string) {
     const durationSec = estimateWavDurationSec(buf);
     return { ok: true as const, format: 'wav' as const, size: buf.byteLength, durationSec };
   }
-  if (isMp3) return { ok: true as const, format: 'mp3' as const, size: buf.byteLength };
+  if (isMp3) {
+    const maxBytesForFiveAt320k = Math.ceil((320_000 * MAX_SECONDS) / 8);
+    if (buf.byteLength > maxBytesForFiveAt320k * 1.25) {
+      return {
+        ok: false as const,
+        error: 'MP3 is too large to be ≤5:00 at normal bitrates. Trim or export shorter.',
+      };
+    }
+    return { ok: true as const, format: 'mp3' as const, size: buf.byteLength };
+  }
   return { ok: false as const, error: 'Only real MP3 or WAV files are allowed.' };
 }

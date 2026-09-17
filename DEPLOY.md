@@ -39,11 +39,13 @@ bucket_name = "nodaw-audiorescue"
 
 [[kv_namespaces]]
 binding = "CASES"
-id = "REPLACE_AFTER_CREATE"          # paste production namespace id
-preview_id = "REPLACE_AFTER_CREATE"  # paste preview namespace id
+id = "8a7b2708e1e0471e9a38634ccb3aec9f"          # production CASES
+preview_id = "d8d2fa77cd09410a8e68ab3a72476e70"  # preview CASES
 ```
 
-Leave `REPLACE_AFTER_CREATE` until the create commands succeed — do not invent ids.
+These ids are already written into `wrangler.toml` for this account. Re-run create only if you recreate namespaces.
+
+**R2 prerequisite:** Cloudflare must have **R2 enabled** on the account (Dashboard → R2 → Enable). Until that is on, `wrangler r2 bucket create nodaw-audiorescue` fails with API code `10042`.
 
 Confirm the R2 bucket is **private** (no public access). Audio is served only through signed download routes.
 

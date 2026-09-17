@@ -43,6 +43,17 @@ describe('validateAudioHeaders', () => {
     const r = validateAudioHeaders(big, 'big.wav');
     expect(r.ok).toBe(false);
   });
+
+  it('rejects MP3 too large to be ≤5:00 at normal bitrates', () => {
+    // ~16 MB with ID3 magic — over 320kbps×5:00×1.25 gate, under 50 MB cap
+    const bytes = new Uint8Array(16 * 1024 * 1024);
+    bytes[0] = 0x49;
+    bytes[1] = 0x44;
+    bytes[2] = 0x33;
+    const r = validateAudioHeaders(bytes.buffer, 'long.mp3');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/5:00|bitrates/i);
+  });
 });
 
 describe('estimateWavDurationSec', () => {

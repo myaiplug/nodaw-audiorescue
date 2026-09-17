@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { processUpload } from '../functions/api/upload';
+import { processUpload } from '../functions/api/upload/index';
 import { processUploadClaim } from '../functions/api/upload/claim';
 import { getCase, putCase, type CaseRecord } from '../functions/lib/cases';
 import { mintToken, tokenKey } from '../functions/lib/tokens';

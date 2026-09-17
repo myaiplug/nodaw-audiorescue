@@ -1,13 +1,13 @@
-import type { Env } from '../lib/env';
+import type { Env } from '../../lib/env';
 import {
   estimateWavDurationSec,
   MAX_SECONDS,
   validateAudioHeaders,
-} from '../lib/audioValidate';
-import { getCase, putCase, type CaseRecord } from '../lib/cases';
-import { notifyDiscord } from '../lib/discord';
-import { clientIp, consumeRateLimit, rateLimitKey } from '../lib/rate-limit';
-import { consumeToken, tokenKey } from '../lib/tokens';
+} from '../../lib/audioValidate';
+import { getCase, putCase, type CaseRecord } from '../../lib/cases';
+import { notifyDiscord } from '../../lib/discord';
+import { clientIp, consumeRateLimit, rateLimitKey } from '../../lib/rate-limit';
+import { consumeToken, tokenKey } from '../../lib/tokens';
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {

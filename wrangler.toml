@@ -13,5 +13,5 @@ bucket_name = "nodaw-audiorescue"
 
 [[kv_namespaces]]
 binding = "CASES"
-id = "REPLACE_AFTER_CREATE"
-preview_id = "REPLACE_AFTER_CREATE"
+id = "8a7b2708e1e0471e9a38634ccb3aec9f"
+preview_id = "d8d2fa77cd09410a8e68ab3a72476e70"

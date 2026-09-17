@@ -51,6 +51,17 @@ export function validateAudioHeaders(buf, filename) {
     const durationSec = estimateWavDurationSec(buf);
     return { ok: true, format: 'wav', size: buf.byteLength, durationSec };
   }
-  if (isMp3) return { ok: true, format: 'mp3', size: buf.byteLength };
+  if (isMp3) {
+    // Even at an aggressive ~320 kbps, >5:00 needs more than ~12 MB.
+    // Reject absurdly large MP3s before Web Audio decode.
+    const maxBytesForFiveAt320k = Math.ceil((320_000 * MAX_SECONDS) / 8);
+    if (buf.byteLength > maxBytesForFiveAt320k * 1.25) {
+      return {
+        ok: false,
+        error: 'MP3 is too large to be ≤5:00 at normal bitrates. Trim or export shorter.',
+      };
+    }
+    return { ok: true, format: 'mp3', size: buf.byteLength };
+  }
   return { ok: false, error: 'Only real MP3 or WAV files are allowed.' };
 }

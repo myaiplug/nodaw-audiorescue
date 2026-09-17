@@ -290,7 +290,10 @@ export async function processOpsCases(
       const result = await commitIssuedBalanceCheckout(env.CASES, env.STRIPE_SECRET_KEY, record, session);
       committed = result.record;
       if (!result.ok) {
-        return json({ ok: true, case: publicize(committed), refused: true, reason: 'already_paid' }, 409);
+        return json(
+          { ok: false, case: publicize(committed), refused: true, reason: 'already_paid' },
+          409,
+        );
       }
     } catch (err) {
       console.error('Stripe balance checkout failed', err);
