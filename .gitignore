@@ -2,6 +2,7 @@
 node_modules/
 .wrangler/
 .dev.vars
+.ops-password.local
 .env
 .env.*
 !.env.example
