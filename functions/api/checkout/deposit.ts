@@ -1,6 +1,6 @@
 import type { Env } from '../../lib/env';
 import { newCaseId, putCase, type CaseRecord } from '../../lib/cases';
-import { clientIp, consumeRateLimit, rateLimitKey } from '../../lib/rate-limit';
+import { clientIp, emailRateLimitKey, enforceLimit } from '../../lib/rate-limit';
 import { depositCheckoutFields, stripeForm } from '../../lib/stripe';
 
 const NAME_MAX = 200;
@@ -63,8 +63,10 @@ export async function processDeposit(
   const parsed = validateDepositInput(body);
   if (!parsed.ok) return json({ error: parsed.error }, 400);
 
-  const limited = await consumeRateLimit(env.CASES, rateLimitKey('deposit', clientIp(request)));
-  if (!limited.ok) return json({ error: 'Too many requests' }, 429);
+  const blocked = await enforceLimit(env.CASES, 'deposit', clientIp(request), [
+    emailRateLimitKey('deposit', parsed.value.email),
+  ]);
+  if (blocked) return blocked;
 
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'Stripe is not configured' }, 500);
   if (!env.PUBLIC_BASE_URL) return json({ error: 'PUBLIC_BASE_URL is not configured' }, 500);

@@ -6,7 +6,7 @@ import {
 } from '../../lib/audioValidate';
 import { getCase, putCase, type CaseRecord } from '../../lib/cases';
 import { notifyDiscord } from '../../lib/discord';
-import { clientIp, consumeRateLimit, rateLimitKey } from '../../lib/rate-limit';
+import { clientIp, enforceLimit } from '../../lib/rate-limit';
 import { consumeToken, tokenKey } from '../../lib/tokens';
 
 function json(data: unknown, status = 200): Response {
@@ -67,8 +67,8 @@ export async function processUpload(
   env: UploadEnv,
   waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<Response> {
-  const limited = await consumeRateLimit(env.CASES, rateLimitKey('upload', clientIp(request)));
-  if (!limited.ok) return json({ error: 'Too many requests' }, 429);
+  const blocked = await enforceLimit(env.CASES, 'upload', clientIp(request));
+  if (blocked) return blocked;
 
   let form: FormData;
   try {

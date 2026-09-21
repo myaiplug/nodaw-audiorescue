@@ -372,10 +372,10 @@ describe('POST /api/upload', () => {
     }
   });
 
-  it('rate-limits an IP after 10 upload POSTs in the window', async () => {
+  it('rate-limits an IP after the upload window is exhausted', async () => {
     const { kv, r2 } = await setup();
     let last: Response | undefined;
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 9; i++) {
       last = await postUpload({
         kv,
         r2,
@@ -385,7 +385,9 @@ describe('POST /api/upload', () => {
       });
     }
     expect(last?.status).toBe(429);
-    expect(await last!.json()).toEqual({ error: 'Too many requests' });
+    expect(last!.headers.get('Retry-After')).toBeTruthy();
+    const body = await last!.json();
+    expect(body.error).toMatch(/Too many requests/i);
   });
 });
 

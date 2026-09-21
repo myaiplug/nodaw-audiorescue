@@ -1,5 +1,6 @@
 import type { Env } from '../../lib/env';
 import { getCase, putCase } from '../../lib/cases';
+import { clientIp, enforceLimit } from '../../lib/rate-limit';
 import { stripeGet } from '../../lib/stripe';
 import {
   DOWNLOAD_TOKEN_TTL_SEC,
@@ -27,6 +28,9 @@ export async function processDownloadList(
   env: Pick<Env, 'CASES' | 'STRIPE_SECRET_KEY'>,
 ): Promise<Response> {
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'Stripe is not configured' }, 500);
+  const blocked = await enforceLimit(env.CASES, 'download_list', clientIp(request));
+  if (blocked) return blocked;
+
   const sessionId = (new URL(request.url).searchParams.get('session_id') || '').trim();
   if (!sessionId) return json({ error: 'Missing session_id' }, 400);
 

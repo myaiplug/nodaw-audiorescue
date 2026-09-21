@@ -11,6 +11,7 @@ import {
   opsSessionToken,
   revokeOpsSession,
 } from '../../lib/opsAuth';
+import { clientIp, enforceLimit } from '../../lib/rate-limit';
 import { commitIssuedBalanceCheckout, createBalanceCheckout, declineRefundFields, stripeForm } from '../../lib/stripe';
 import { DOWNLOAD_TOKEN_TTL_SEC, mintDownloadLinks } from '../../lib/tokens';
 
@@ -160,6 +161,8 @@ export async function processOpsCases(
   const { action, fields, form } = parsed;
 
   if (action === 'login') {
+    const blocked = await enforceLimit(env.CASES, 'ops_login', clientIp(request));
+    if (blocked) return blocked;
     const password = fields.password || '';
     if (!opsPasswordMatches(password, env.OPS_PASSWORD)) {
       return json({ error: 'Unauthorized' }, 401);

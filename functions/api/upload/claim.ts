@@ -1,6 +1,7 @@
 import type { Env } from '../../lib/env';
 import { getCase, putCase } from '../../lib/cases';
 import { notifyDiscord } from '../../lib/discord';
+import { clientIp, enforceLimit } from '../../lib/rate-limit';
 import { stripeGet } from '../../lib/stripe';
 import { liveOrMintUploadToken, UPLOAD_TOKEN_TTL_SEC } from '../../lib/tokens';
 
@@ -30,6 +31,9 @@ export async function processUploadClaim(
   waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<Response> {
   if (!env.STRIPE_SECRET_KEY) return json({ error: 'Stripe is not configured' }, 500);
+  const blocked = await enforceLimit(env.CASES, 'claim', clientIp(request));
+  if (blocked) return blocked;
+
   const url = new URL(request.url);
   const sessionId = (url.searchParams.get('session_id') || '').trim();
   const caseParam = (url.searchParams.get('case') || '').trim();
