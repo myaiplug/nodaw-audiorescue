@@ -188,11 +188,26 @@ Do **not** treat GitHub Pages as the app host — it cannot run Functions, R2, o
 
 ---
 
+## Abuse / cost guards (rate limits)
+
+Server-side KV limits (Cloudflare `CF-Connecting-IP`). `429` responses include `Retry-After`.
+
+| Route | Limit | Window | Why |
+|-------|------:|-------:|-----|
+| `POST /api/checkout/deposit` | **5** / IP **and** / email | 1 hour | Stops Checkout spam / Stripe fees |
+| `POST /api/upload` | **8** / IP | 1 hour | Caps R2 write abuse |
+| `GET /api/upload/claim` | **20** / IP | 1 hour | Caps Stripe session lookups |
+| `GET /api/download/list` | **30** / IP | 1 hour | Caps thanks-page polling |
+| Ops `login` | **5** / IP | 15 min | Password brute-force brake |
+
+Also already in place: honeypot on intake, MP3/WAV magic-byte + size/duration gates, upload only after paid deposit token, webhook signature verify, ops session cookies (not raw password).
+
 ## Quick reference
 
 | Item | Value |
 |------|--------|
 | Pages project | `nodaw-audiorescue` |
+| Production URL | `https://nodaw-audiorescue.pages.dev` |
 | R2 binding | `AUDIO` → bucket `nodaw-audiorescue` |
 | KV binding | `CASES` |
 | Webhook path | `/api/webhooks/stripe` |
